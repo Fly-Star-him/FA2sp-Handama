@@ -10,6 +10,7 @@
 #include "../../FA2sp.h"
 #include "../../Algorithms/Matrix3D.h"
 #include "../CMapData/Body.h"
+#include "../../Extra/GeneralLoad.h"
 
 std::vector<CLoadingExt::SHPUnionData> CLoadingExt::UnionSHP_Data[2];
 std::vector<CLoadingExt::SHPUnionData> CLoadingExt::UnionSHPShadow_Data[2];
@@ -1324,6 +1325,12 @@ void CLoadingExt::LoadInfantry(ppmfc::CString ID)
 
 void CLoadingExt::LoadTerrainOrSmudge(ppmfc::CString ID, bool terrain)
 {
+	if (terrain)
+	{
+		GeneralLoad::LoadTerrain(this, ID);
+		return;
+	}
+
 	ppmfc::CString ArtID = GetArtID(ID);
 	ppmfc::CString ImageID = GetTerrainOrSmudgeFileID(ID);
 	ppmfc::CString FileName = ImageID + this->GetFileExtension();

@@ -13,6 +13,7 @@
 #include "../../Miscs/MultiSelection.h"
 #include <codecvt>
 #include "../../ExtraWindow/CTerrainGenerator/CTerrainGenerator.h"
+#include "../../Extra/GeneralLoad.h"
 
 static int Left, Right, Top, Bottom;
 static CRect window;
@@ -51,11 +52,11 @@ inline static void GetUnitImageID(ppmfc::CString& ImageID, const CUnitData& obj,
 		int HP = atoi(obj.Health);
 		if (static_cast<int>((CMapDataExt::ConditionYellow + 0.001f) * 256) > HP)
 		{
-			ImageID = Variables::Rules.GetString(obj.TypeID, "Image.ConditionYellow", ImageID);
+			ImageID = GeneralLoad::LoadDamagedImage(obj.TypeID, ImageID,DamageType::Yellow);
 		}
 		if (static_cast<int>((CMapDataExt::ConditionRed + 0.001f) * 256) > HP)
 		{
-			ImageID = Variables::Rules.GetString(obj.TypeID, "Image.ConditionRed", ImageID);
+			ImageID = GeneralLoad::LoadDamagedImage(obj.TypeID, ImageID, DamageType::Red);
 		}
 		if (ExtConfigs::InGameDisplay_Water)
 		{
@@ -63,11 +64,11 @@ inline static void GetUnitImageID(ppmfc::CString& ImageID, const CUnitData& obj,
 			{
 				if (static_cast<int>((CMapDataExt::ConditionYellow + 0.001f) * 256) > HP)
 				{
-					ImageID = Variables::Rules.GetString(obj.TypeID, "WaterImage.ConditionYellow", ImageID);
+					ImageID = GeneralLoad::LoadDamagedImage(obj.TypeID, ImageID, DamageType::YellowWater);
 				}
 				if (static_cast<int>((CMapDataExt::ConditionRed + 0.001f) * 256) > HP)
 				{
-					ImageID = Variables::Rules.GetString(obj.TypeID, "WaterImage.ConditionRed", ImageID);
+					ImageID = GeneralLoad::LoadDamagedImage(obj.TypeID, ImageID, DamageType::RedWater);
 				}
 			}
 		}
