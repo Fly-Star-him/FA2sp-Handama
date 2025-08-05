@@ -5,6 +5,8 @@
 #include <CINI.h>
 #include "../../Helpers/Translations.h"
 #include "../../FA2sp.h"
+#include "../../Extra/GeneralLoad.h"
+
 bool CLoadingExt::HasFile_ReadyToReadFromFolder = false;
 Palette CLoadingExt::TempISOPalette = { 0 };
 bool CLoadingExt::IsLoadingObjectView = false;
@@ -71,8 +73,21 @@ bool CLoadingExt::InitMixFilesFix()
 		}
 	}
 
+	ppmfc::CString fa2extra = CFinalSunApp::Instance->ExePath();
+	fa2extra += "\\";
+	fa2extra += "fa2extra.mix";
+	if (auto id = CMixFile::Open(fa2extra, 0))
+	{
+		Logger::Raw("[MixLoader] %04d - %s loaded.\n", id, fa2extra);
+	}
+	else
+	{
+		Logger::Raw("[MixLoader] %s failed!\n", fa2extra);
+	}
+
 	ppmfc::CString Dir = CFinalSunApp::Instance->FilePath();
 	Dir += "\\";
+
 	auto LoadMixFile = [this, Dir](const char* Mix, int Parent = 0)
 	{
 		if (Parent)
@@ -112,17 +127,7 @@ bool CLoadingExt::InitMixFilesFix()
 		return value;
 	};
 
-	ppmfc::CString fa2extra = CFinalSunApp::Instance->ExePath();
-	fa2extra += "\\";
-	fa2extra += "fa2extra.mix";
-	if (auto id = CMixFile::Open(fa2extra, 0))
-	{
-		Logger::Raw("[MixLoader] %04d - %s loaded.\n", id, fa2extra);
-	}
-	else
-	{
-		Logger::Raw("[MixLoader] %s failed!\n", fa2extra);
-	}
+	GeneralLoad::LoadExtraMixFile(this, Dir);
 
 	ppmfc::CString format = "EXPAND" + CINI::FAData->GetString("Filenames", "MixExtension", "MD") + "%02d.MIX";
 	for (int i = 99; i >= 0; --i)
