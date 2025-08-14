@@ -137,6 +137,8 @@ bool CLoadingExt::InitMixFilesFix()
 		LoadMixFile(filename);
 	}
 
+	GeneralLoad::LoadExtraMixFileAfter(this, Dir);
+
 	if (!LoadMixFile("RA2MD.MIX"))		return false;
 	if (!LoadMixFile("RA2.MIX"))		return false;
 	if (!LoadMixFile("CACHEMD.MIX"))	return false;
