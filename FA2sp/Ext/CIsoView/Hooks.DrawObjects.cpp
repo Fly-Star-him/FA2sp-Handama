@@ -1476,7 +1476,7 @@ DEFINE_HOOK(46EA64, CIsoView_Draw_MainLoop, 6)
 					}
 				}
 
-				int facings = CLoadingExt::GetAvailableFacing(obj.TypeID);
+				int facings = CLoadingExt::GetAvailableFacing(imageID);
 				int nFacing = (atoi(obj.Facing) * facings / 256) % facings;
 
 				const auto& imageName = CLoadingExt::GetImageName(imageID, nFacing);
