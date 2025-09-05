@@ -1461,7 +1461,7 @@ DEFINE_HOOK(46EA64, CIsoView_Draw_MainLoop, 6)
 			{
 				CAircraftData obj;
 				CMapData::Instance->GetAircraftData(cell->Aircraft, obj);
-				auto imageID = obj.TypeID;
+				ppmfc::CString imageID = obj.TypeID;
 
 				if (ExtConfigs::InGameDisplay_Damage)
 				{

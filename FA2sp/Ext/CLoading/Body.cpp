@@ -331,7 +331,7 @@ bool CLoadingExt::InitMixFilesFix()
 			Logger::Raw("[ExtMixLoader] %s failed!\n", fa2extra);
 		}
 
-		GeneralLoad::LoadExtraMixFile(this, Dir);
+		GeneralLoad::LoadExtraMixFile(this, Dir, index, manager);
 
 		if (!LoadMixFile("RA2MD.MIX", 0, true))		return false;
 		if (!LoadMixFile("RA2.MIX", 0, true))		return false;
