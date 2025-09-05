@@ -11,6 +11,7 @@
 #include "../../Algorithms/Matrix3D.h"
 #include "../CMapData/Body.h"
 #include "../CFinalSunDlg/Body.h"
+#include "../../Extra/GeneralLoad.h"
 
 std::vector<CLoadingExt::SHPUnionData> CLoadingExt::UnionSHP_Data[2];
 std::vector<CLoadingExt::SHPUnionData> CLoadingExt::UnionSHPShadow_Data[2];
@@ -196,10 +197,10 @@ void CLoadingExt::LoadObjects(FString ID)
 		LoadInfantry(ID);
 		break;
 	case CLoadingExt::ObjectType::Terrain:
-		LoadTerrainOrSmudge(ID, true);
+		GeneralLoad::LoadTerrain(this, ID);
 		break;
 	case CLoadingExt::ObjectType::Smudge:
-		LoadTerrainOrSmudge(ID, false);
+		LoadSmudge(ID);
 		break;
 	case CLoadingExt::ObjectType::Vehicle:
 	{
@@ -1438,7 +1439,7 @@ void CLoadingExt::LoadInfantry(FString ID)
 	}
 }
 
-void CLoadingExt::LoadTerrainOrSmudge(FString ID, bool terrain)
+void CLoadingExt::LoadSmudge(FString ID)
 {
 	FString ArtID = GetArtID(ID);
 	FString ImageID = GetTerrainOrSmudgeFileID(ID);
@@ -1462,7 +1463,7 @@ void CLoadingExt::LoadTerrainOrSmudge(FString ID, bool terrain)
 		GetFullPaletteName(PaletteName);
 		SetImageDataSafe(FramesBuffers[0], DictName, header.Width, header.Height, PalettesManager::LoadPalette(PaletteName));
 
-		if (ExtConfigs::InGameDisplay_Shadow && terrain)
+		if (ExtConfigs::InGameDisplay_Shadow)
 		{
 			FString DictNameShadow;
 			unsigned char* pBufferShadow[1];
@@ -1471,7 +1472,7 @@ void CLoadingExt::LoadTerrainOrSmudge(FString ID, bool terrain)
 			SetImageDataSafe(pBufferShadow[0], DictNameShadow, header.Width, header.Height, &CMapDataExt::Palette_Shadow);
 		}
 
-		if (ExtConfigs::InGameDisplay_AlphaImage && terrain)
+		if (ExtConfigs::InGameDisplay_AlphaImage)
 		{
 			if (auto pAIFile = Variables::RulesMap.TryGetString(ID, "AlphaImage"))
 			{

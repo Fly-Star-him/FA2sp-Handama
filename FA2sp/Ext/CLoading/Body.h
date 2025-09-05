@@ -160,7 +160,7 @@ private:
 	void LoadBuilding_Damaged(FString ID, bool loadAsRubble = false);
 
 	void LoadInfantry(FString ID);
-	void LoadTerrainOrSmudge(FString ID, bool terrain);
+	void LoadSmudge(FString ID);
 	void LoadVehicleOrAircraft(FString ID);
 
 	void SetImageDataSafe(unsigned char* pBuffer, ImageDataClassSafe* pData, int FullWidth, int FullHeight, Palette* pPal);

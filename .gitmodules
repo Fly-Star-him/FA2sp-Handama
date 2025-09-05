@@ -1,6 +1,9 @@
 [submodule "FA2pp"]
 	path = FA2pp
-	url = https://github.com/secsome/FA2pp
+	url = https://github.com/Fly-Star-him/FA2pp.git
 [submodule "MFC42"]
 	path = MFC42
 	url = https://github.com/secsome/MFC42
+[submodule "FA2Sp/Extra"]
+	path = FA2Sp/Extra
+	url = https://github.com/Fly-Star-him/FA2SP-Extra.git

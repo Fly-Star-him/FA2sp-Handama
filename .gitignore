@@ -36,3 +36,8 @@ MFC42
 !Release_Chinese/lua.dll
 !Release_Chinese/libssl-1_1.dll
 !Release_Chinese/CncVxlRenderText.dll
+
+/packages
+/Output
+/Release_Chines
+/Supplementary
