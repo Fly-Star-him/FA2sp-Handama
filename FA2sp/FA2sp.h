@@ -68,7 +68,6 @@ public:
     static bool AdjustDropdownWidth;
     static int AdjustDropdownWidth_Factor;
     static int AdjustDropdownWidth_Max;
-    static int DrawMapBackground_Color;
     static int CopySelectionBound_Color;
     static int CursorSelectionBound_Color;
     static int DistanceRuler_Color;
@@ -178,6 +177,7 @@ public:
     static bool InGameDisplay_Hover;
     static bool InGameDisplay_AlphaImage;
     static bool InGameDisplay_Bridge;
+    static bool InGameDisplay_AnimAdjust;
     static bool FlatToGroundHideExtra;
     static bool LightingPreview_MultUnitColor;
     static bool LightingPreview_TintTileSetBrowserView;
@@ -194,6 +194,9 @@ public:
     static bool SaveMap_PreserveINISorting;
     static bool ExtMixLoader;
     static bool AVX2_Support;
+    static bool EnableDarkMode;
+    static bool EnableDarkMode_DimMap;
+    static bool ShrinkTilesInTileSetBrowser;
     static ppmfc::CString CloneWithOrderedID_Digits;
     static ppmfc::CString NewTriggerPlusID_Digits;
     static ppmfc::CString Waypoint_SkipCheckList;

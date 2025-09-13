@@ -156,7 +156,7 @@ DEFINE_HOOK(46DE00, CIsoView_Draw_Begin, 7)
 
 DEFINE_HOOK(46DF20, CIsoView_Draw_BackgroundColor, 6)
 {
-	R->Stack(STACK_OFFS(0xD20, 0x020), ExtConfigs::DrawMapBackground_Color);
+	R->Stack(STACK_OFFS(0xD20, 0x020), ExtConfigs::EnableDarkMode ? RGB(32, 32, 32) : RGB(255, 255, 255));
 	return 0;
 }
 
@@ -1461,7 +1461,7 @@ DEFINE_HOOK(46EA64, CIsoView_Draw_MainLoop, 6)
 			{
 				CAircraftData obj;
 				CMapData::Instance->GetAircraftData(cell->Aircraft, obj);
-				ppmfc::CString imageID = obj.TypeID;
+        ppmfc::CString imageID = obj.TypeID;
 
 				if (ExtConfigs::InGameDisplay_Damage)
 				{
@@ -1475,16 +1475,15 @@ DEFINE_HOOK(46EA64, CIsoView_Draw_MainLoop, 6)
 						imageID = GeneralLoad::LoadDamagedImage(obj.TypeID, imageID, DamageType::Red);
 					}
 				}
-
-				int facings = CLoadingExt::GetAvailableFacing(imageID);
-				int nFacing = (atoi(obj.Facing) * facings / 256) % facings;
-
-				const auto& imageName = CLoadingExt::GetImageName(imageID, nFacing);
-
+        
 				if (!CLoadingExt::IsObjectLoaded(imageID))
 				{
 					CLoading::Instance->LoadObjects(imageID);
 				}
+
+				int facings = CLoadingExt::GetAvailableFacing(obj.TypeID);
+				int nFacing = (atoi(obj.Facing) * facings / 256) % facings;
+				const auto& imageName = CLoadingExt::GetImageName(imageID, nFacing);
 				auto pData = CLoadingExt::GetImageDataFromServer(imageName);
 
 				if (pData->pImageBuffer)

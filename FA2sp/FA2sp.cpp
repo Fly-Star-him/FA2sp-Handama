@@ -55,7 +55,6 @@ bool ExtConfigs::DisplayTriggerID;
 bool ExtConfigs::AdjustDropdownWidth;
 int ExtConfigs::AdjustDropdownWidth_Factor;
 int ExtConfigs::AdjustDropdownWidth_Max;
-int ExtConfigs::DrawMapBackground_Color;
 int ExtConfigs::CopySelectionBound_Color;
 int ExtConfigs::CursorSelectionBound_Color;
 int ExtConfigs::DistanceRuler_Color;
@@ -165,6 +164,7 @@ bool ExtConfigs::InGameDisplay_Damage;
 bool ExtConfigs::InGameDisplay_Hover;
 bool ExtConfigs::InGameDisplay_AlphaImage;
 bool ExtConfigs::InGameDisplay_Bridge;
+bool ExtConfigs::InGameDisplay_AnimAdjust;
 bool ExtConfigs::FlatToGroundHideExtra;
 bool ExtConfigs::LightingPreview_MultUnitColor;
 bool ExtConfigs::LightingPreview_TintTileSetBrowserView;
@@ -181,6 +181,9 @@ int ExtConfigs::DisplayTextSize;
 int ExtConfigs::DistanceRuler_Records;
 bool ExtConfigs::DisplayObjectsOutside;
 bool ExtConfigs::AVX2_Support;
+bool ExtConfigs::EnableDarkMode;
+bool ExtConfigs::EnableDarkMode_DimMap;
+bool ExtConfigs::ShrinkTilesInTileSetBrowser;
 ppmfc::CString ExtConfigs::CloneWithOrderedID_Digits;
 ppmfc::CString ExtConfigs::NewTriggerPlusID_Digits;
 ppmfc::CString ExtConfigs::Waypoint_SkipCheckList;
@@ -243,12 +246,6 @@ void FA2sp::ExtConfigsInitialize()
 	ExtConfigs::AdjustDropdownWidth_Factor = CINI::FAData->GetInteger("ExtConfigs", "AdjustDropdownWidth.Factor", 8);
 	ExtConfigs::AdjustDropdownWidth_Max = CINI::FAData->GetInteger("ExtConfigs", "AdjustDropdownWidth.Max", 360);
 
-	ExtConfigs::DrawMapBackground_Color =
-		CINI::FAData->GetColor("ExtConfigs", "DrawMapBackgroundColor", 0xFFFFFF);
-	ExtConfigs::DrawMapBackground_Color = ((ExtConfigs::DrawMapBackground_Color & 0xFF0000) >> 16) |
-		(ExtConfigs::DrawMapBackground_Color & 0x00FF00) |
-		((ExtConfigs::DrawMapBackground_Color & 0x0000FF) << 16);
-
 	ExtConfigs::CopySelectionBound_Color = 
 		CINI::FAData->GetColor("ExtConfigs", "CopySelectionBound.Color", 0x0000FF);
 	ExtConfigs::CursorSelectionBound_Color =
@@ -300,7 +297,9 @@ void FA2sp::ExtConfigsInitialize()
 	ExtConfigs::AIRepairDefaultYes = CINI::FAData->GetBool("ExtConfigs", "AIRepairDefaultYes");
 	ExtConfigs::AISellableDefaultYes = CINI::FAData->GetBool("ExtConfigs", "AISellableDefaultYes");
 
-
+	ExtConfigs::ShrinkTilesInTileSetBrowser = CINI::FAData->GetBool("ExtConfigs", "ShrinkTilesInTileSetBrowser");
+	ExtConfigs::EnableDarkMode = CINI::FAData->GetBool("ExtConfigs", "EnableDarkMode");
+	ExtConfigs::EnableDarkMode_DimMap = CINI::FAData->GetBool("ExtConfigs", "EnableDarkMode.DimMap");
 	ExtConfigs::DisplayObjectsOutside = CINI::FAData->GetBool("ExtConfigs", "DisplayObjectsOutside");
 	ExtConfigs::DDrawScalingBilinear = CINI::FAData->GetBool("ExtConfigs", "DDrawScalingBilinear", true);
 	ExtConfigs::DDrawScalingBilinear_OnlyShrink = CINI::FAData->GetBool("ExtConfigs", "DDrawScalingBilinear.OnlyShrink", true);
@@ -319,6 +318,7 @@ void FA2sp::ExtConfigsInitialize()
 	ExtConfigs::InGameDisplay_Hover = CINI::FAData->GetBool("ExtConfigs", "InGameDisplay.Hover", true);
 	ExtConfigs::InGameDisplay_AlphaImage = CINI::FAData->GetBool("ExtConfigs", "InGameDisplay.AlphaImage", true);
 	ExtConfigs::InGameDisplay_Bridge = CINI::FAData->GetBool("ExtConfigs", "InGameDisplay.Bridge", true);
+	ExtConfigs::InGameDisplay_AnimAdjust = CINI::FAData->GetBool("ExtConfigs", "InGameDisplay.AnimAdjust", true);
 	ExtConfigs::FlatToGroundHideExtra = CINI::FAData->GetBool("ExtConfigs", "FlatToGroundHideExtra");
 	ExtConfigs::ExtOverlays = CINI::FAData->GetBool("ExtConfigs", "ExtOverlays");
 
@@ -579,6 +579,20 @@ void FA2sp::ExtConfigsInitialize()
 		});
 
 	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
+		.DisplayName = Translations::TranslateOrDefault("Options.EnableDarkMode", "Enable dark mode"),
+		.IniKey = "EnableDarkMode",
+		.Value = &ExtConfigs::EnableDarkMode,
+		.Type = ExtConfigs::SpecialOptionType::Restart
+		});
+
+	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
+		.DisplayName = Translations::TranslateOrDefault("Options.EnableDarkMode.DimMap", "make map view dim in drak mode"),
+		.IniKey = "EnableDarkMode.DimMap",
+		.Value = &ExtConfigs::EnableDarkMode_DimMap,
+		.Type = ExtConfigs::SpecialOptionType::None
+		});
+
+	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
 		.DisplayName = Translations::TranslateOrDefault("Options.UseNewToolBarCameo", "Use new tool bar cameo"),
 		.IniKey = "UseNewToolBarCameo",
 		.Value = &ExtConfigs::UseNewToolBarCameo,
@@ -658,6 +672,13 @@ void FA2sp::ExtConfigsInitialize()
 		});
 
 	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
+		.DisplayName = Translations::TranslateOrDefault("Options.InGameDisplay.AnimAdjust", "Adjust building animation layer, may not be consistent with in-game"),
+		.IniKey = "InGameDisplay.AnimAdjust",
+		.Value = &ExtConfigs::InGameDisplay_AnimAdjust,
+		.Type = ExtConfigs::SpecialOptionType::ReloadMap
+		});
+
+	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
 		.DisplayName = Translations::TranslateOrDefault("Options.FlatToGroundHideExtra", "Hide extra image when flat-to-ground is enabled"),
 		.IniKey = "FlatToGroundHideExtra",
 		.Value = &ExtConfigs::FlatToGroundHideExtra,
@@ -707,9 +728,16 @@ void FA2sp::ExtConfigsInitialize()
 		});
 
 	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
-		.DisplayName = Translations::TranslateOrDefault("Options.LightingPreview.TintTileSetBrowserView", "Mult tile set brorser images when changing lighting"),
+		.DisplayName = Translations::TranslateOrDefault("Options.LightingPreview.TintTileSetBrowserView", "Mult tile set browser images when changing lighting"),
 		.IniKey = "LightingPreview.TintTileSetBrowserView",
 		.Value = &ExtConfigs::LightingPreview_TintTileSetBrowserView,
+		.Type = ExtConfigs::SpecialOptionType::None
+		});
+
+	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
+		.DisplayName = Translations::TranslateOrDefault("Options.ShrinkTilesInTileSetBrowser", "Shink tile images in tile set browser"),
+		.IniKey = "ShrinkTilesInTileSetBrowser",
+		.Value = &ExtConfigs::ShrinkTilesInTileSetBrowser,
 		.Type = ExtConfigs::SpecialOptionType::None
 		});
 
