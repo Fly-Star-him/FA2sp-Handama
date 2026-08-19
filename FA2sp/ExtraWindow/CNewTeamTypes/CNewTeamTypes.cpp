@@ -963,6 +963,12 @@ BOOL CALLBACK CNewTeamTypes::DlgProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM 
             else if (CODE == CBN_DROPDOWN && TagListChanged && !vcbTag.IsProgrammaticDropdown())
                 OnDropdownTag();
             break;
+        case Controls::ParaDropPlane:
+            if (CODE == CBN_SELCHANGE)
+                OnSelchangeParaDropPlane();
+            else if (CODE == CBN_EDITCHANGE || CODE == CBN_CLOSEUP)
+                OnSelchangeParaDropPlane(true);
+            break;
         case Controls::TransportWaypoint:
             if (CODE == CBN_SELCHANGE)
                 OnSelchangeTransportWaypoint(hWnd);
@@ -1145,6 +1151,22 @@ BOOL CALLBACK CNewTeamTypes::DlgProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM 
 
     // Process this message through default handler
     return FALSE;
+}
+
+void CNewTeamTypes::OnSelchangeParaDropPlane(bool edited)
+{
+    if (SelectedTeamIndex < 0)
+        return;
+
+    FString text = vcbParaDropPlane.GetSelectedText(edited);
+    FString::TrimIndex(text);
+    if (text == "None")
+        text = "";
+
+    if (text.IsEmpty())
+        map.DeleteKey(CurrentTeamID, "ParaDropPlane");
+    else
+        map.WriteString(CurrentTeamID, "ParaDropPlane", text);
 }
 
 void CNewTeamTypes::OnSelchangeTransportWaypoint(HWND& hWnd, bool edited)
@@ -1603,6 +1625,7 @@ void CNewTeamTypes::OnSelchangeTeamtypes(bool edited)
         auto taskforce = map.GetString(pID, "TaskForce");
         auto script = map.GetString(pID, "Script");
         auto tag = map.GetString(pID, "Tag");
+        auto tParaDropPlane = map.GetString(pID, "ParaDropPlane", "None");
         auto tWaypoint = STDHelpers::StringToWaypointStr(map.GetString(pID, "TransportWaypoint"));
         auto waypoint = STDHelpers::StringToWaypointStr(map.GetString(pID, "Waypoint"));
 
@@ -1693,7 +1716,6 @@ void CNewTeamTypes::OnSelchangeTeamtypes(bool edited)
         else
             SendMessage(hSetRecruitOnLiber, WM_SETTEXT, 0, (LPARAM)map.GetString(pID, "SetRecruitableOnLiberate").GetString());
 
-        auto tParaDropPlane = map.GetString(pID, "ParaDropPlane").GetString();
         int idxPDP = vcbParaDropPlane.FindStringExactStart(tParaDropPlane);
         if (idxPDP != CB_ERR)
             vcbParaDropPlane.SetCurSel(idxPDP);
