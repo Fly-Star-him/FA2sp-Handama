@@ -251,6 +251,7 @@ void CNewScript::Close(HWND& hWnd)
     {
         CIsoViewExt::DrawScriptPath = false;
         ::RedrawWindow(CFinalSunDlg::Instance->MyViewFrame.pIsoView->GetSafeHwnd(), 0, 0, RDW_UPDATENOW | RDW_INVALIDATE);
+        CFinalSunDlg::Instance->MyViewFrame.Minimap.RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
     }
 
     EndDialog(hWnd, NULL);
@@ -693,7 +694,10 @@ BOOL CALLBACK CNewScript::DlgProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lPa
                 if (CIsoViewExt::DrawScriptPath)
                     UpdateScriptPath();
                 else
+                {
                     ::RedrawWindow(CFinalSunDlg::Instance->MyViewFrame.pIsoView->GetSafeHwnd(), 0, 0, RDW_UPDATENOW | RDW_INVALIDATE);
+                    CFinalSunDlg::Instance->MyViewFrame.Minimap.RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+                }
             }        
             break;
         default:
@@ -1135,7 +1139,7 @@ void CNewScript::OnClickDelScript(HWND& hWnd)
     CNewTeamTypes::ScriptListChanged = true;
     int result = MessageBox(hWnd,
         Translations::TranslateOrDefault("ScriptDelWarn", "Are you sure to delete this ScriptType? Don't forget to delete any references to this ScriptType"),
-        Translations::TranslateOrDefault("ScriptDelTitle", "Delete ScriptType"), MB_YESNO);
+        Translations::TranslateOrDefault("ScriptDelTitle", "Delete ScriptType"), MB_YESNO | MB_ICONQUESTION);
 
     if (result == IDNO)
         return;
@@ -1366,6 +1370,11 @@ void CNewScript::OnClickCloneAction(HWND& hWnd)
 void CNewScript::OnClickDeleteAction(HWND& hWnd)
 {
     if (SelectedScriptIndex < 0 || SendMessage(hActionsListBox, LB_GETCARETINDEX, NULL, NULL) < 0)
+        return;
+    if (ExtConfigs::ConfirmDeleteSubEntries && MessageBox(hWnd,
+        Translations::TranslateOrDefault("ScriptDelActionWarn", "Are you sure to delete the selected action line(s) from this script?"),
+        Translations::TranslateOrDefault("ScriptDelActionTitle", "Delete Script Action"),
+        MB_YESNO | MB_ICONQUESTION) == IDNO)
         return;
     std::vector<int> curSels;
     GetListBoxSels(curSels);
@@ -1791,6 +1800,7 @@ void CNewScript::UpdateScriptPath()
         }
     }
     ::RedrawWindow(CFinalSunDlg::Instance->MyViewFrame.pIsoView->GetSafeHwnd(), 0, 0, RDW_UPDATENOW | RDW_INVALIDATE);
+    CFinalSunDlg::Instance->MyViewFrame.Minimap.RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
 }
 
 void CNewScript::OnClickSearchReference(HWND& hWnd)

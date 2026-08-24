@@ -31,6 +31,7 @@
 #include "../CListUInputDlg/CListUInputDlg.h"
 #include <CInputMessageBox.h>
 #include "../../Ext/CIsoView/DirectXCore.h"
+#include "../../Miscs/StringtableLoader.h"
 
 namespace LuaFunctions
 {
@@ -223,6 +224,27 @@ namespace LuaFunctions
 				DispatchMessage(&msg);
 			}
 		}
+	}
+
+	bool TriggerLua_IsUsed(const std::string& id)
+	{
+		return UsedINIIndices.find(id) != UsedINIIndices.end();
+	}
+
+	void TriggerLua_RegisterUsedIndex(const std::string& id)
+	{
+		if (!id.empty())
+			UsedINIIndices.insert(id);
+	}
+
+	void TriggerLua_UnregisterUsedIndex(const std::string& id)
+	{
+		UsedINIIndices.erase(id);
+	}
+
+	void TriggerLua_Report(const std::string& msg)
+	{
+		write_lua_console(msg);
 	}
 
 	// Write raw text to output box without prefix or extra newline
@@ -3710,6 +3732,35 @@ namespace LuaFunctions
 				CLuaConsole::needRedraw = true;
 			}
 		}
+	}
+
+	static sol::table csf_search(const char* text, sol::optional<std::string> mode)
+	{
+		sol::table ret = CLuaConsole::Lua.create_table();
+		std::string target = mode ? *mode : "both";
+		if (target != "label" && target != "text")
+			target = "both";
+		bool matchLabel = (target == "label" || target == "both");
+		bool matchText = (target == "text" || target == "both");
+
+		FString search = text ? text : "";
+		int i = 1;
+		LabelMatcher matcher(search.c_str());
+		for (auto& csf : StringtableLoader::CSFFiles_Stringtable)
+		{
+			if (!search.IsEmpty())
+			{
+				bool hit = (matchLabel && matcher.Match(csf.first)) ||
+						   (matchText && matcher.Match(csf.second));
+				if (!hit)
+					continue;
+			}
+			sol::table entry = CLuaConsole::Lua.create_table();
+			entry["label"] = csf.first.ToStdString();
+			entry["text"] = csf.second.ToStdString();
+			ret[i++] = entry;
+		}
+		return ret;
 	}
 
 	// Return all tilesets of the current theater as an array of { index = ..., name = ... }.
