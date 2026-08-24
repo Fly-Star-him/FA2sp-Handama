@@ -297,11 +297,7 @@ ppmfc::CString Translations::TranslateTileSet(int index)
 
 FString Translations::ParseHouseName(FString src, bool IDToUIName)
 {
-    if (ExtConfigs::NoHouseNameTranslation)
-    {
-        return src;
-    }
-    else
+    if (!ExtConfigs::NoHouseNameTranslation)
     {
         auto& countries = CINI::Rules->GetSection("Countries")->GetEntities();
         FString translated;
@@ -326,11 +322,13 @@ FString Translations::ParseHouseName(FString src, bool IDToUIName)
                     translated = StringtableLoader::QueryUIName(pair.second, true) + "(" + pair.second + ")";
                 else
                     translated = StringtableLoader::QueryUIName(pair.second, true);
+
                 src.Replace(translated, pair.second);
             }
         }
     }
-    return GeneralLoad::GetPlayerName(src, IDToUIName);
+
+    return src;
 }
 
 DEFINE_HOOK(43DA80, FALanguage_GetTranslationItem, 7)

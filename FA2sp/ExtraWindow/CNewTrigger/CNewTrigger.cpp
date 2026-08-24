@@ -441,7 +441,7 @@ void CNewTrigger::Update(HWND& hWnd, bool UpdateTrigger)
 
     if (!CMapData::Instance->IsMultiOnly())
     {
-        vcbHouse.AddString("Player");
+        vcbHouse.AddString("<Player>");
     }
     else if (ExtConfigs::PlayerAtXForTriggers)
     {
