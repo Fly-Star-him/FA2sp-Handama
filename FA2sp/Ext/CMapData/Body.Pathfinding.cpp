@@ -4,6 +4,7 @@
 #include <functional>
 #include <limits>
 #include <queue>
+#include <CLoading.h>
 
 namespace
 {
@@ -18,7 +19,7 @@ namespace
 
 	constexpr double Step_Straight = 1.0;
 	constexpr double Step_Diagonal = 1.41421356237309504880;
-	constexpr double Destroy_Penalty = 3.0;
+	constexpr double Destroy_Penalty = 2.0;
 
 	struct PathLevelInfo
 	{
@@ -31,6 +32,7 @@ namespace
 		PathLevelInfo Levels[2]{};
 		int LevelCount = 1;
 		bool Destructible = false;
+		bool Crushable = false;
 		unsigned DestroyedPassage = Pass_None;
 	};
 
@@ -85,10 +87,16 @@ namespace
 			{
 				terrainPassage = Pass_Land | Pass_Rail;
 			}
+			else if (typeData.Crushable && typeData.Wall)
+			{
+				info.Crushable = true;
+				info.Destructible = true;
+				terrainPassage = Pass_None;
+			}
 			else if (typeData.Wall)
 			{
 				info.Destructible = true;
-				terrainPassage = Pass_Rail;
+				terrainPassage = Pass_None;
 			}
 			else if (typeData.Road)
 			{
@@ -164,17 +172,6 @@ namespace
 		return info;
 	}
 
-	bool CellHasBlockingObject(CellData* cell)
-	{
-		return cell->Unit != -1
-			|| cell->Infantry[0] != -1
-			|| cell->Infantry[1] != -1
-			|| cell->Infantry[2] != -1
-			|| cell->Aircraft != -1
-			|| cell->Structure != -1
-			|| cell->Terrain != -1;
-	}
-
 	bool IsCliffBackCell(CMapDataExt* pThis, int X, int Y)
 	{
 		CellData* cell = pThis->GetCellAt(X, Y);
@@ -212,27 +209,16 @@ namespace
 	}
 }
 
-std::vector<MapCoord> CMapDataExt::FindPath(MapCoord from, MapCoord to, PathfindingMoveType type,
-	bool destroyOverlay, bool ignoreObjects, std::vector<unsigned char>* outLevels,
-	bool noCliffBack, std::vector<unsigned char>* outHeights)
+std::vector<MapCoord> CMapDataExt::FindPath(MapCoord from, MapCoord to, PathfindingMoveType type, PathfindingObjectType objectType,
+	bool destroyOverlay, bool ignoreBuilding, bool ignoreTree, std::vector<unsigned char>* outLevels,
+	bool noCliffBack, std::vector<unsigned char>* outHeights, bool* outReachable)
 {
 	std::vector<MapCoord> result;
 	auto pThis = GetExtension();
+	if (outReachable)
+		*outReachable = false;
 	if (!pThis->IsCoordInMap(from.X, from.Y) || !pThis->IsCoordInMap(to.X, to.Y))
 		return result;
-
-	result.push_back(from);
-	if (outLevels)
-		outLevels->push_back(0);
-	if (outHeights)
-		outHeights->push_back(pThis->GetCellAt(from.X, from.Y)->Height);
-	if (from.X == to.X && from.Y == to.Y)
-		return result;
-	result.clear();
-	if (outLevels)
-		outLevels->clear();
-	if (outHeights)
-		outHeights->clear();
 
 	unsigned required = 0;
 	bool canDestroy = false;
@@ -267,6 +253,76 @@ std::vector<MapCoord> CMapDataExt::FindPath(MapCoord from, MapCoord to, Pathfind
 	}
 
 	canDestroy = canDestroy || (destroyOverlay && type != PathfindingMoveType::Train);
+
+	auto cellBlockedByObjects = [&](int X, int Y) -> bool
+	{
+		CellData* cell = pThis->GetCellAt(X, Y);
+		if (!ignoreBuilding && cell->Structure != -1)
+			return true;
+		if (cell->Terrain > -1
+			&& cell->Terrain < CMapData::Instance->TerrainDatas.size())
+		{
+			auto& name = CMapData::Instance->TerrainDatas[cell->Terrain].TypeID;
+			ppmfc::CString key = CLoading::Instance->TheaterIdentifier == 'A' ?
+				"SnowOccupationBits" : "TemperateOccupationBits";
+			if (!ignoreTree && objectType == PathfindingObjectType::Vehicle)
+				return true;
+			if (!ignoreTree && objectType == PathfindingObjectType::Infantry
+				&& Variables::RulesMap.GetInteger(name, key, 7) >= 7)
+				return true;
+			if (Variables::RulesMap.GetBool(name, "SpawnsTiberium"))
+				return true;
+		}
+		if (noCliffBack && IsCliffBackCell(pThis, X, Y))
+			return true;
+		return false;
+	};
+
+	if (cellBlockedByObjects(from.X, from.Y))
+		return result;
+
+	{
+		const PathCellInfo& startInfo = BuildPathCellInfo(from.X, from.Y);
+		bool startPassable = false;
+		for (int level = 0; level < startInfo.LevelCount; ++level)
+		{
+			if (startInfo.Levels[level].Passage & required)
+			{
+				startPassable = true;
+				break;
+			}
+			if (startInfo.Crushable && objectType == PathfindingObjectType::Vehicle
+				&& (startInfo.DestroyedPassage & required))
+			{
+				startPassable = true;
+				break;
+			}
+			if (canDestroy && startInfo.Destructible && (startInfo.DestroyedPassage & required))
+			{
+				startPassable = true;
+				break;
+			}
+		}
+		if (!startPassable)
+			return result;
+	}
+
+	result.push_back(from);
+	if (outLevels)
+		outLevels->push_back(0);
+	if (outHeights)
+		outHeights->push_back(pThis->GetCellAt(from.X, from.Y)->Height);
+	if (from.X == to.X && from.Y == to.Y)
+	{
+		if (outReachable)
+			*outReachable = true;
+		return result;
+	}
+	result.clear();
+	if (outLevels)
+		outLevels->clear();
+	if (outHeights)
+		outHeights->clear();
 
 	const int posCount = pThis->MapWidthPlusHeight * pThis->MapWidthPlusHeight;
 	const int startPos = pThis->GetCoordIndex(from.X, from.Y);
@@ -416,14 +472,15 @@ std::vector<MapCoord> CMapDataExt::FindPath(MapCoord from, MapCoord to, Pathfind
 
 				if (levelNext == 0 && posNext != startPos)
 				{
-					if (!ignoreObjects && CellHasBlockingObject(pThis->GetCellAt(xNext, yNext)))
-						continue;
-					if (noCliffBack && IsCliffBackCell(pThis, xNext, yNext))
+					if (cellBlockedByObjects(xNext, yNext))
 						continue;
 				}
 
 				double moveCost;
-				if (nextLevel.Passage & required)
+				if (nextInfo.Crushable && objectType == PathfindingObjectType::Vehicle
+					&& (nextInfo.DestroyedPassage & required))
+					moveCost = step;
+				else if (nextLevel.Passage & required)
 					moveCost = step;
 				else if (canDestroy && nextInfo.Destructible && (nextInfo.DestroyedPassage & required))
 					moveCost = step + Destroy_Penalty;
@@ -445,6 +502,9 @@ std::vector<MapCoord> CMapDataExt::FindPath(MapCoord from, MapCoord to, Pathfind
 
 	if (foundState >= 0)
 	{
+		if (outReachable)
+			*outReachable = true;
+
 		std::vector<int> levels;
 		std::vector<int> heights;
 		for (int s = foundState; s >= 0; s = prevState[s])

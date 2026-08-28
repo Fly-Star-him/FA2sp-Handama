@@ -2125,7 +2125,7 @@ std::vector<int> CMapDataExt::GetStructureSize(ppmfc::CString structure)
 		std::string y = std::string(art->GetString(image, "Foundation.Y", "5"));
 		foundation = x + "x" + y;
 	}
-	auto found = STDHelpers::SplitString(foundation.c_str(), "x");
+	auto found = STDHelpers::SplitString(foundation.c_str(), 1, "x");
 	result.push_back(atoi(found[1]));
 	result.push_back(atoi(found[0]));
 	return result;
@@ -3154,6 +3154,14 @@ void ObjectRecord::recover()
 			if (last.Point2 == MapCoord{ 0,0 })
 			{
 				last.Point1 = { 0,0 };
+			}
+		}
+		if (!CIsoViewExt::PathDistances.empty())
+		{
+			auto& last = CIsoViewExt::PathDistances.back();
+			if (last.Point2 == MapCoord{ 0,0 })
+			{
+				last = {};
 			}
 		}
 	}
@@ -5352,6 +5360,7 @@ void CMapDataExt::InitializeAllHdmEdition(bool updateMinimap, bool reloadCellDat
 		item.Veins = Variables::RulesMap.GetBool(ol, "IsVeins");
 		item.Rubble = Variables::RulesMap.GetBool(ol, "IsRubble");
 		item.Tiberium = Variables::RulesMap.GetBool(ol, "Tiberium");
+		item.Crushable = Variables::RulesMap.GetBool(ol, "Crushable");
 		item.Overrides = Variables::RulesMap.GetBool(ol, "Overrides");
 		item.Road = Variables::RulesMap.GetString(ol, "Land", "") == "Road";
 		item.CustomPaletteName = CINI::Art->GetString(ol, "Palette");
