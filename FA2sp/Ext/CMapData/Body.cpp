@@ -50,6 +50,7 @@
 #include "../../ExtraWindow/CMeasurementToolbox/CMeasurementToolbox.h"
 #include "../CIsoView/RendererTypes.h"
 #include "../CIsoView/DirectXCore.h"
+#include "../../Extra/GeneralLoad.h"
 
 int CMapDataExt::OreValue[4] { -1,-1,-1,-1 };
 unsigned short CMapDataExt::CurrentRenderBuildingStrength;
@@ -5763,6 +5764,8 @@ void CMapDataExt::InitializeAllHdmEdition(bool updateMinimap, bool reloadCellDat
 				}
 				ta.RotationAdjust = Variables::RulesMap.GetInteger(vr, "Rotation");
 			}
+
+			GeneralLoad::LoadExtraTechnos(ID);
 		};
 
 		for (auto& [_, ID] : Variables::RulesMap.GetSection("InfantryTypes"))
