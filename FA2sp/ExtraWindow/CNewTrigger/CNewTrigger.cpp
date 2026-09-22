@@ -24,6 +24,7 @@
 #include "../CCsfEditor/CCsfEditor.h"
 #include "../CNewTeamTypes/CNewTeamTypes.h"
 #include "../CNewAITrigger/CNewAITrigger.h"
+#include "../CNewLocalVariables/CNewLocalVariables.h"
 #include "../../Helpers/Helper.h"
 #include "../../Miscs/StringtableLoader.h"
 #include "../CNewTag/CNewTag.h"
@@ -507,6 +508,7 @@ void CNewTrigger::Close(HWND& hWnd)
         hl.Detach();
     }
     EndDialog(hWnd, NULL);
+    SoundPlayer::Stop();
 
     CurrentTrigger = nullptr;
     m_hwnd = NULL;
@@ -2601,22 +2603,8 @@ void CNewTrigger::UpdateParamAffectedParam_Action(int index)
                 auto paramType = FString::GetParam(CINI::FAData->GetString(ExtraWindow::GetTranslatedSectionName("ParamTypes"), target.ParamMap[text]), 1);
                 ExtraWindow::LoadParams(vcbActionParameter[target.AffectedParam], paramType, this);
                 //SendMessage(hActionParameterDesc[target.AffectedParam], WM_SETTEXT, 0, (LPARAM)paramType[0].GetString());
-                if (paramType == "10") // stringtables
-                {
-                    ActionParamType[target.AffectedParam] = ParamType::CSF;
-                }
-                else if (paramType == "9") // triggers
-                {
-                    ActionParamType[target.AffectedParam] = ParamType::Trigger;
-                }
-                else if (paramType == "15" || FString::GetParam(
-                    fadata.GetString(
-                        "NewParamTypes",
-                        paramType), 0)
-                    == "TeamTypes")
-                {
-                    ActionParamType[target.AffectedParam] = ParamType::Team;
-                }
+                
+                ActionParamType[target.AffectedParam] = ExtraWindow::GetParamType(paramType);
 
                 auto& targetText = CurrentTrigger->Actions[SelectedActionIndex].Params[ActionParamsUsage[target.AffectedParam].second];
                 int paramIdx = ExtraWindow::FindCBStringExactStart(hActionParameter[target.AffectedParam], targetText + " ");
@@ -2649,24 +2637,8 @@ void CNewTrigger::UpdateParamAffectedParam_Event(int index)
             {
                 auto paramType = FString::GetParam(CINI::FAData->GetString(ExtraWindow::GetTranslatedSectionName("ParamTypes"), target.ParamMap[text]), 1);
                 ExtraWindow::LoadParams(vcbEventParameter[target.AffectedParam], paramType, this);
-
-                if (paramType == "10") // stringtables
-                {
-                    EventParamType[target.AffectedParam] = ParamType::CSF;
-                }
-                else if (paramType == "9") // triggers
-                {
-                    EventParamType[target.AffectedParam] = ParamType::Trigger;
-                }
-                else if (paramType == "15" || FString::GetParam(
-                    fadata.GetString(
-                        "NewParamTypes",
-                        paramType), 0)
-                    == "TeamTypes")
-                {
-                    EventParamType[target.AffectedParam] = ParamType::Team;
-                }
-
+					
+                EventParamType[target.AffectedParam] = ExtraWindow::GetParamType(paramType);
                 auto& targetText = CurrentTrigger->Events[SelectedEventIndex].Params[EventParamsUsage[target.AffectedParam].second];
                 int paramIdx = ExtraWindow::FindCBStringExactStart(hEventParameter[target.AffectedParam], targetText + " ");
                 if (paramIdx == CB_ERR)
@@ -3341,6 +3313,7 @@ void CNewTrigger::OnClickDelAction(HWND& hWnd)
 
 void CNewTrigger::UpdateEventAndParam(int changedEvent, bool changeCursel)
 {
+    SoundPlayer::Stop();
     if (!CurrentTrigger) return;
     if (CurrentTrigger->EventCount == 0) return;
     if (SelectedEventIndex > CurrentTrigger->EventCount) SelectedEventIndex = CurrentTrigger->EventCount - 1;
@@ -3425,66 +3398,10 @@ void CNewTrigger::UpdateEventAndParam(int changedEvent, bool changeCursel)
         EventParamType[i] = ParamType::None;
 
         auto setSpecialParams = [&](const FString& paramIdx) {
-            if (paramIdx == "10")
-            {
-                EventParamType[i] = ParamType::CSF;
-            }
-            else if (paramIdx == "1")
-            {
-                EventParamType[i] = ParamType::Waypoint;
-                if (!ExtConfigs::SearchCombobox_Waypoint)
-                    CNewTrigger::EventParameterAutoDrop[i] = false;
-            }
-            else if (paramIdx == "9")
-            {
-                EventParamType[i] = ParamType::Trigger;
-            }
-            else if (paramIdx == "15")
-            {
-                EventParamType[i] = ParamType::Team;
-            }
-            else if (paramIdx == "11")
-            {
-                EventParamType[i] = ParamType::Tag;
-            }
-            else
-            {
-                auto atoms3 = FString::SplitString(
-                    fadata.GetString("NewParamTypes", paramIdx), 4);
-                auto sectionName = atoms3[0];
-                auto& loadFrom = atoms3[1];
 
-                bool loadFromMapOrAi = (loadFrom == "3" || loadFrom == "map" || loadFrom == "7" || loadFrom == "ai+map" || loadFrom == "10" || loadFrom == "ai");
-                bool loadFromMap = (loadFrom == "3" || loadFrom == "map");
-                if (sectionName == "TeamTypes" && loadFromMapOrAi)
-                {
-                    EventParamType[i] = ParamType::Team;
-                }
-                else if (sectionName == "TaskForces" && loadFromMapOrAi)
-                {
-                    EventParamType[i] = ParamType::Taskforce;
-                }
-                else if (sectionName == "ScriptTypes" && loadFromMapOrAi)
-                {
-                    EventParamType[i] = ParamType::Script;
-                }
-                else if (sectionName == "AITriggerTypes" && loadFromMapOrAi)
-                {
-                    EventParamType[i] = ParamType::AITrigger;
-                }
-                else if ((sectionName == "Triggers"
-                    || sectionName == "Actions"
-                    || sectionName == "Events")
-                    && loadFromMap
-                    )
-                {
-                    EventParamType[i] = ParamType::Trigger;
-                }
-                else if (sectionName == "Tags" && loadFromMap)
-                {
-                    EventParamType[i] = ParamType::Tag;
-                }
-            }
+            EventParamType[i] = ExtraWindow::GetParamType(paramIdx);
+            if (EventParamType[i] == ParamType::Waypoint && !ExtConfigs::SearchCombobox_Waypoint)
+                CNewTrigger::EventParameterAutoDrop[i] = false;
         };
 
         if (thisEvent.P3Enabled)
@@ -3552,6 +3469,7 @@ void CNewTrigger::UpdateEventAndParam(int changedEvent, bool changeCursel)
 
 void CNewTrigger::UpdateActionAndParam(int changedAction, bool changeCursel)
 {
+    SoundPlayer::Stop();
     if (!CurrentTrigger) return;
     if (CurrentTrigger->ActionCount == 0) return;
     if (SelectedActionIndex > CurrentTrigger->ActionCount) SelectedActionIndex = CurrentTrigger->ActionCount - 1;
@@ -3660,67 +3578,9 @@ void CNewTrigger::UpdateActionAndParam(int changedAction, bool changeCursel)
                 ExtraWindow::LoadParams(vcbActionParameter[i], paramIdx, this);
 
                 SendMessage(hActionParameterDesc[i], WM_SETTEXT, 0, (LPARAM)pParamTypes[ActionParamsUsage[i].second][0].c_str());
-                if (paramIdx == "10")
-                {
-                    //thisAction.Params[ActionParamsUsage[i].second].MakeLower();
-                    ActionParamType[i] = ParamType::CSF;
-                }
-                else if (paramIdx == "1")
-                {
-                    ActionParamType[i] = ParamType::Waypoint;
-                    if (!ExtConfigs::SearchCombobox_Waypoint)
-                        CNewTrigger::ActionParameterAutoDrop[i] = false;
-                }
-                else if (paramIdx == "9")
-                {
-                    ActionParamType[i] = ParamType::Trigger;
-                }
-                else if (paramIdx == "15")
-                {
-                    ActionParamType[i] = ParamType::Team;
-                }
-                else if (paramIdx == "11")
-                {
-                    ActionParamType[i] = ParamType::Tag;
-                }
-                else
-                {
-                    auto atoms3 = FString::SplitString(
-                        fadata.GetString("NewParamTypes", paramIdx), 4);
-                    auto sectionName = atoms3[0];
-                    auto& loadFrom = atoms3[1];
-
-                    bool loadFromMapOrAi = (loadFrom == "3" || loadFrom == "map" || loadFrom == "7" || loadFrom == "ai+map" || loadFrom == "10" || loadFrom == "ai");
-                    bool loadFromMap = (loadFrom == "3" || loadFrom == "map");
-                    if (sectionName == "TeamTypes" && loadFromMapOrAi)
-                    {
-                        ActionParamType[i] = ParamType::Team;
-                    }
-                    else if (sectionName == "TaskForces" && loadFromMapOrAi)
-                    {
-                        ActionParamType[i] = ParamType::Taskforce;
-                    }
-                    else if (sectionName == "ScriptTypes" && loadFromMapOrAi)
-                    {
-                        ActionParamType[i] = ParamType::Script;
-                    }
-                    else if (sectionName == "AITriggerTypes" && loadFromMapOrAi)
-                    {
-                        ActionParamType[i] = ParamType::AITrigger;
-                    }
-                    else if ((sectionName == "Triggers"
-                        || sectionName == "Actions"
-                        || sectionName == "Events")
-                        && loadFromMap
-                        )
-                    {
-                        ActionParamType[i] = ParamType::Trigger;
-                    }
-                    else if (sectionName == "Tags" && loadFromMap)
-                    {
-                        ActionParamType[i] = ParamType::Tag;
-                    }
-                }
+                ActionParamType[i] = ExtraWindow::GetParamType(paramIdx);
+                if (ActionParamType[i] == ParamType::Waypoint && !ExtConfigs::SearchCombobox_Waypoint)
+                    CNewTrigger::ActionParameterAutoDrop[i] = false;
             }
             else
             {
@@ -4080,13 +3940,14 @@ void CNewTrigger::OnClickActionSplit(HWND& hWnd)
 
 void CNewTrigger::OnClickParamJump(bool isEvent, int index)
 {
+    const int jumpSource = isEvent ? SoundPlayer::TriggerEvent : SoundPlayer::TriggerAction;
     VirtualComboBoxEx* vcb = isEvent ? &vcbEventParameter[index] : &vcbActionParameter[index];
     ParamType type = isEvent ? EventParamType[index] : ActionParamType[index];
 
     FString value = vcb->GetSelectedText(true);
-    FString::TrimIndex(value);
     if (type == ParamType::Waypoint)
     {
+        FString::TrimIndex(value);
         if (auto pCord = CINI::CurrentDocument->TryGetString("Waypoints", value))
         {
             auto second = atoi(*pCord);
@@ -4098,6 +3959,7 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
     }
     else if (type == ParamType::Trigger)
     {
+        FString::TrimIndex(value);
         auto idx = vcbSelectedTrigger.FindStringExact(ExtraWindow::GetTriggerDisplayName(value));
         if (idx == CB_ERR)
             return;
@@ -4106,6 +3968,7 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
     }
     else if (type == ParamType::AITrigger)
     {
+        FString::TrimIndex(value);
         if (CNewAITrigger::GetHandle() == NULL)
             CNewAITrigger::Create(m_parent);
 
@@ -4119,6 +3982,7 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
     }
     else if (type == ParamType::Team)
     {
+        FString::TrimIndex(value);
         if (CNewTeamTypes::GetHandle() == NULL)
             CNewTeamTypes::Create(m_parent);
 
@@ -4132,6 +3996,7 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
     }
     else if (type == ParamType::Tag)
     {
+        FString::TrimIndex(value);
         if (CNewTag::GetHandle() == NULL)
             CNewTag::Create(m_parent);
 
@@ -4144,6 +4009,7 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
     }
     else if (type == ParamType::Script)
     {
+        FString::TrimIndex(value);
         if (CNewScript::GetHandle() == NULL)
             CNewScript::Create(m_parent);
 
@@ -4157,6 +4023,7 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
     }
     else if (type == ParamType::Taskforce)
     {
+        FString::TrimIndex(value);
         if (CNewTaskforce::GetHandle() == NULL)
             CNewTaskforce::Create(m_parent);
 
@@ -4170,6 +4037,7 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
     }
     else if (type == ParamType::CSF)
     {
+        FString::TrimIndex(value);
         CCsfEditor::TriggerCaller = GetCurrentInstanceIndex();
         CCsfEditor::TriggerParamIndex = index;
         if (CCsfEditor::GetHandle() == NULL)
@@ -4184,6 +4052,146 @@ void CNewTrigger::OnClickParamJump(bool isEvent, int index)
         CCsfEditor::CurrentSelectedCSF = value;
 
         ::SendMessage(CCsfEditor::GetHandle(), 114515, 0, 0);
+    }
+    else if (type == ParamType::LocalVariable)
+    {
+        FString::TrimIndex(value);
+        if (CNewLocalVariables::GetHandle() == NULL)
+        CNewLocalVariables::Create(m_parent);
+		value += " ";
+		auto idx = CNewLocalVariables::vcbVariables.FindStringExactStart(value);
+        if (idx == CB_ERR)
+            return;
+        CNewLocalVariables::OnSelchangeVariable(false, idx);
+        SetWindowPos(CNewLocalVariables::GetHandle(), HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    }
+    else if (type == ParamType::Theme)
+    {
+        ExtraWindow::TrimStringIndex(value);
+        auto soundName = CINI::Theme->GetString(value, "Sound");
+        if (!soundName.IsEmpty())
+        {
+            soundName += ".wav";
+            if (SoundPlayer::IsPlaying()
+                && SoundPlayer::IsSameJumpTarget(jumpSource, index, soundName))
+                SoundPlayer::Stop();
+            else
+            {
+                SoundPlayer::SetJumpTarget(jumpSource, index, soundName);
+                SoundPlayer::PlayThemeSoundFile(soundName);
+            }
+        }
+    }
+    else if (type == ParamType::Eva)
+    {
+        ExtraWindow::TrimStringIndex(value);
+		FString EvaSide = "Allied";
+        if (!CMapData::Instance->IsMultiOnly())
+        {
+			auto player = map.GetString("Basic", "Player");
+            auto country = map.GetString(player, "Country");
+            auto side = Variables::RulesMap.GetString(country, "Side");
+            if (side == "Nod")
+                EvaSide = "Russian";
+            else if (side == "ThirdSide")
+                EvaSide = "Yuri";
+			EvaSide = Variables::RulesMap.GetString(side, "EVA.Tag", EvaSide);
+		}
+		auto soundName = CINI::Eva->GetString(value, EvaSide);
+		if (soundName.IsEmpty())
+        {
+            EvaSide = "Allied";
+            soundName = CINI::Eva->GetString(value, EvaSide);
+        }
+		if (!soundName.IsEmpty())
+        {
+            soundName += ".wav";
+            if (SoundPlayer::IsPlaying()
+                && SoundPlayer::IsSameJumpTarget(jumpSource, index, soundName))
+                SoundPlayer::Stop();
+            else
+            {
+                SoundPlayer::SetJumpTarget(jumpSource, index, soundName);
+                SoundPlayer::PlayThemeSoundFile(soundName);
+            }
+        }
+    }
+    else if (type == ParamType::Sound)
+    {
+        ExtraWindow::TrimStringIndex(value);
+        auto soundNames = CINI::Sound->GetString(value, "Sounds");
+		soundNames.Trim();
+		auto sounds = FString::SplitString(soundNames, " ");
+        if (!sounds.empty())
+        {
+            auto randomSound = STDHelpers::RandomSelect(sounds);
+            randomSound.Trim();
+            if (randomSound[0] == '$')
+            {
+                randomSound = randomSound.Mid(1);
+            }
+            if (SoundPlayer::IsPlaying()
+                && SoundPlayer::IsSameJumpTarget(jumpSource, index, randomSound))
+                SoundPlayer::Stop();
+            else
+            {
+                auto volume = CINI::Sound->GetInteger(value, "Volume", 100);
+                SoundPlayer::SetJumpTarget(jumpSource, index, randomSound);
+                SoundPlayer::PlayBagSound(randomSound, volume);
+            }
+        }
+    }
+    else if (type == ParamType::Animation)
+    {
+        auto atoms = FString::SplitString(value, 1, " - ");
+        auto ID = atoms[1];
+		int x = -1;
+		int y = -1;
+		for (int i = 0; i < (isEvent ? EVENT_PARAM_COUNT : ACTION_PARAM_COUNT); i++)
+		{
+            VirtualComboBoxEx* vcb = isEvent ? &vcbEventParameter[i] : &vcbActionParameter[i];
+            ParamType type = isEvent ? EventParamType[i] : ActionParamType[i];
+            if (type == ParamType::Waypoint)
+            {
+                FString wp = vcb->GetSelectedText(true);
+                FString::TrimIndex(wp);
+                if (auto pCord = CINI::CurrentDocument->TryGetString("Waypoints", wp))
+                {
+                    auto second = atoi(*pCord);
+                    if (second > 0)
+                    {
+                        x = second / 1000;
+                        y = second % 1000;
+						break;
+					}
+				}
+            }
+        }
+
+		// Pressing the button again for the same animation just stops it;
+		// a different animation stops the old one and starts the new one.
+		if (AnimPreview::IsSame(ID))
+		{
+			AnimPreview::Stop();
+		}
+		else
+		{
+            if (CMapData::Instance->IsCoordInMap(x, y))
+            {
+                AnimPreview::Play(ID, MapCoord{ x, y });
+            }
+            else
+            {
+                auto pIsoView = CIsoViewExt::GetExtension();
+                CRect window;
+                CIsoViewExt::GetValidWindowRect(pIsoView->GetSafeHwnd(), &window);
+                CIsoViewExt::AdaptRectForSecondScreen(&window);
+                int xCenter = window.left + window.right / 2 + pIsoView->ViewPosition.x;
+                int yCenter = window.top + window.bottom / 2 + pIsoView->ViewPosition.y;
+                pIsoView->ScreenCoord2MapCoord(xCenter, yCenter);
+				AnimPreview::Play(ID, MapCoord{ xCenter, yCenter });
+            }
+		}
     }
 }
 

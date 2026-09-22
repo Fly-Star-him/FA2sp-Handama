@@ -73,6 +73,8 @@ public:
 	};
 	std::vector<BuildingTextureSlice> GetBuildingColoredTextures(Palette* coloredPal, BGRStruct color);
 
+	void ReleaseCachedTextures();
+
 private:
 	struct BuildingSliceCacheEntry {
 		std::vector<BuildingTextureSlice> slices;
@@ -168,6 +170,7 @@ public:
 	static bool ReplaceBitmapColor(CBitmap& bitmap,COLORREF oldColor,COLORREF newColor);
 	void SetImageDataSafe(unsigned char* pBuffer, FString NameInDict,
 		int FullWidth, int FullHeight, Palette* pPal, bool clip = true, bool outline = false);
+	void SetImageDataSafe(unsigned char* pBuffer, ImageDataClassSafe* pData, int FullWidth, int FullHeight, Palette* pPal);
 	ImageDataClassSafe* SetBuildingImageDataSafe(unsigned char* pBuffer, FString NameInDict,
 		int FullWidth, int FullHeight, Palette* pPal, unsigned char* pAlphaBuffer);
 	void SetImageData(unsigned char* pBuffer, FString NameInDict, int FullWidth, int FullHeight, Palette* pPal);
@@ -275,7 +278,6 @@ private:
 	void LoadInsignia(const FString& ID);
 	void LoadAlphaImage(const FString& ID, CLoadingExt::GameObjectType type);
 
-	void SetImageDataSafe(unsigned char* pBuffer, ImageDataClassSafe* pData, int FullWidth, int FullHeight, Palette* pPal);
 	void SetImageData(unsigned char* pBuffer, ImageDataClass* pData, int FullWidth, int FullHeight, Palette* pPal);
 	void ShrinkSHP(unsigned char* pIn, int InWidth, int InHeight, unsigned char*& pOut, int* OutWidth, int* OutHeight);
 	void UnionSHP_Add(unsigned char* pBuffer, int Width, int Height, int DeltaX = 0, int DeltaY = 0,
@@ -383,13 +385,22 @@ public:
 	static TextureResource* DirectXGetOrLoadFlagOrCelltagFromMap(COLORREF newColor, bool IsFlag);
 	static int GetAvailableFacing(const FString& ID);
 	static int GetAlphaImageFacing(const FString& ID);
-	static void* ReadWholeFile(const char* filename, DWORD* pDwSize = nullptr, bool fa2path = false);
+	static void* ReadWholeFile(const char* filename, DWORD* pDwSize = nullptr, bool fa2path = false, bool useCache = true);
 	static bool HasFileExt(ppmfc::CString filename, int nMix = -114);
+
+	// [ExtraDirectories] Custom resource directories, read in registration order.
+	// Priority: lower than Resources\HighPriority\, higher than CFinalSunApp::FilePath()
+	static const std::vector<FString>& GetExtraDirectories();
+	// Returns the full path of the first matching file among the custom directories,
+	// or false when not found. outPath (optional) receives the resolved full path.
+	static bool FindInExtraDirectories(const char* filename, FString* outPath = nullptr);
 
 	static FHashSet NotFoundFiles;
 	static std::unordered_map<std::string, std::vector<unsigned char>> g_cache[2];
 	static std::unordered_map<std::string, uint64_t> g_cacheTime[2];
 	static uint64_t g_lastCleanup;
+	static std::vector<FString> s_extraDirectories;
+	static bool s_extraDirectoriesLoaded;
 };
 
 #pragma pack(push, 1)

@@ -978,11 +978,14 @@ BOOL CFinalSunDlgExt::OnCommandExt(WPARAM wParam, LPARAM lParam)
 					if (Variables::RulesMap.GetBool(ID, "InvisibleInGame"))
 						CIsoViewExt::MapRendererIgnoreObjects.insert(ID);
 				}
-				const auto& overlays = Variables::RulesMap.GetSection("OverlayTypes");
-				for (auto& [_, ID] : overlays)
+				const auto& overlays = Variables::RulesMap.ParseIndicies("OverlayTypes", true);
+				for (int i = 0; i < overlays.size(); ++i)
 				{
-					if (Variables::RulesMap.GetBool(ID, "IsRubble"))
-						CIsoViewExt::MapRendererIgnoreObjects.insert(ID);
+					const auto& value = overlays[i];
+					if (Variables::RulesMap.GetBool(value, "IsRubble"))
+						CIsoViewExt::MapRendererIgnoreObjects.insert(value);
+					if (i == 100 || i == 101 || i == 231 || i == 232) // hidden bridges
+						CIsoViewExt::MapRendererIgnoreObjects.insert(value);
 				}
 			}
 
@@ -1064,6 +1067,14 @@ BOOL CFinalSunDlgExt::OnCommandExt(WPARAM wParam, LPARAM lParam)
 				int tileH = cr.Height();
 				if (tileW <= 0 || tileH <= 0) { tileW = r.Width(); tileH = r.Height(); }
 
+				auto gridStep = [](int tile, int quantum)
+				{
+					int step = (quantum > 0) ? ((tile - 1) / quantum) * quantum : tile;
+					return step > 0 ? step : tile;
+				};
+				int stepX = gridStep(tileW, 60);
+				int stepY = gridStep(tileH, 30);
+
 				CRect validRange;
 				validRange.left = 30 * (height + width + startY - startX) - (r.right - r.left) / 2 - r.left;
 				validRange.top = 15 * (startY + startX) - (r.bottom - r.top) / 2 - r.top;
@@ -1072,8 +1083,8 @@ BOOL CFinalSunDlgExt::OnCommandExt(WPARAM wParam, LPARAM lParam)
 
 				pIsoView->ViewPosition.y = validRange.top;
 
-				int totalTileCount = ((validRange.right - validRange.left + tileW) / tileW + 1)
-					* ((validRange.bottom - validRange.top + tileH) / tileH + 1) - 1;
+				int totalTileCount = ((validRange.right - validRange.left + stepX) / stepX + 1)
+					* ((validRange.bottom - validRange.top + stepY) / stepY + 1) - 1;
 
 				CUpdateProgress progress(
 					Translations::TranslateOrDefault("MapRendererProgressText",
@@ -1116,14 +1127,14 @@ BOOL CFinalSunDlgExt::OnCommandExt(WPARAM wParam, LPARAM lParam)
 						Sleep(1);
 
 						if (CIsoViewExt::RenderTileSuccess || renderFailedCount >= 500) {
-							pIsoView->ViewPosition.x += tileW;
+							pIsoView->ViewPosition.x += stepX;
 							currentTile++;
 						}
 						else {
 							renderFailedCount++;
 						}
 					}
-					pIsoView->ViewPosition.y += tileH;
+					pIsoView->ViewPosition.y += stepY;
 				}
 
 				EnableScrollBar(pIsoView->GetSafeHwnd(), SB_BOTH, ESB_ENABLE_BOTH);
@@ -2144,6 +2155,19 @@ BOOL CFinalSunDlgExt::PreTranslateMessageExt(MSG* pMsg)
 	}
 	switch (pMsg->message)
 	{
+	case WM_TIMER:
+	{
+		// Animation preview: frames are advanced by a timer on the main dialog
+		// (the timer is created in AnimPreview::Play).
+		if (AnimPreview::IsTimerMessage(pMsg->wParam))
+		{
+			AnimPreview::OnTimer();
+			// Return TRUE so the message is not dispatched: the game's own
+			// OnTimer must not receive this unknown timer id.
+			return TRUE;
+		}
+		break;
+	}
 	//case WM_INITDIALOG:
 	//	;
 	//  SetWindowTheme(*this, L"DarkMode_Explorer", NULL);
@@ -2220,6 +2244,42 @@ BOOL CFinalSunDlgExt::PreTranslateMessageExt(MSG* pMsg)
 				int index = std::clamp(pBrushSize->GetCurSel() + (zDelta > 0 ? -1 : 1), 0, pBrushSize->GetCount() - 1);
 				pBrushSize->SetCurSel(index);
 				ChangeBrushSize(index);
+			}
+		}
+		else if (CIsoView::CurrentCommand->Command == 1)
+		{
+			int facingIndex = -1;
+			switch (CIsoView::CurrentCommand->Type)
+			{
+			case 1: facingIndex = 2; break; // Infantry
+			case 2: facingIndex = 1; break; // Building
+			case 3: facingIndex = 0; break; // Aircraft
+			case 4: facingIndex = 3; break; // Vehicle
+			}
+
+			if (facingIndex >= 0
+				&& !(CIsoView::CurrentCommand->Command == 1 && CIsoView::CurrentCommand->Type == 7)
+				&& !CIsoView::GetInstance()->Drag
+				&& CIsoView::CurrentCommand->Command != 21)
+			{
+				POINT pt;
+				GetCursorPos(&pt);
+				if (ExtraWindow::IsPointOnIsoViewAndNotCovered(pt))
+				{
+					int zDelta = GET_WHEEL_DELTA_WPARAM(pMsg->wParam);
+					// infantry always stays at 8 directions (step 32), others follow ExtFacings
+					const int step = (facingIndex == 2) ? 32 : (ExtConfigs::ExtFacings_Scroll ? 8 : 32);
+					const int count = 256 / step;
+					// snap the stored value onto the current preset grid, then step one preset
+					int idx = (CIsoViewExt::AutoPropertyBrushFacing[facingIndex] + step / 2) / step;
+					idx %= count;
+					idx = (idx + (zDelta < 0 ? 1 : -1)) % count;
+					if (idx < 0)
+						idx += count;
+					CIsoViewExt::AutoPropertyBrushFacing[facingIndex] = idx * step;
+					::ScreenToClient(CIsoView::GetInstance()->GetSafeHwnd(), &pt);
+					CIsoView::GetInstance()->OnMouseMove(0, pt);
+				}
 			}
 		}
 		// last one

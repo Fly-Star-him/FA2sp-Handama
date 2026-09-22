@@ -253,7 +253,7 @@ public:
 
     enum {
         Add = 0, Delete, AllDelete, batchAdd, batchDelete, TileSetAdd, TileSetDelete,
-        ConnectedAdd, ConnectedDelete, ReplaceHide, squareBatchAdd, squareBatchDelete
+        ConnectedAdd, ConnectedDelete, ReplaceHide, squareBatchAdd, squareBatchDelete, InvertSelection
     };
 
     enum
@@ -443,6 +443,20 @@ public:
 
     static FString SearchText;
     void ApplySearchFilter();
+
+    enum class ViewObjectsMenuItem : UINT
+    {
+        CollapseAll = 0x4001,
+        ExpandAll = 0x4002,
+        ScrollTop = 0x4003,
+        ScrollBottom = 0x4004
+    };
+
+    void ShowContextMenu(POINT pt);
+    void Menu_CollapseAll();
+    void Menu_ExpandAll();
+    void Menu_ScrollToTop();
+    void Menu_ScrollToBottom();
 
     static std::unique_ptr<CNewPropertyBuilding> BuildingBrushDlg;
     static std::unique_ptr<CNewPropertyInfantry> InfantryBrushDlg;

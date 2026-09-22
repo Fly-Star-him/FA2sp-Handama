@@ -336,19 +336,6 @@ private:
 };
 
 // A window class
-enum class ParamType : int
-{
-    None = 0,
-    CSF,
-    Team,
-    Trigger,
-    Tag,
-    Taskforce,
-    Script,
-    AITrigger,
-    Waypoint
-};
-
 class CNewTrigger
 {
 public:

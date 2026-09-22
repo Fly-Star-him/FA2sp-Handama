@@ -100,6 +100,7 @@ bool ExtConfigs::ExtWaypoints;
 bool ExtConfigs::ExtFacings;
 bool ExtConfigs::ExtTilts;
 bool ExtConfigs::ExtFacings_Drag;
+bool ExtConfigs::ExtFacings_Scroll;
 bool ExtConfigs::ExtFacings_DragPreview;
 int ExtConfigs::UndoRedoLimit;
 bool ExtConfigs::UndoRedo_ShiftPlaceTile;
@@ -245,6 +246,7 @@ bool ExtConfigs::GridObjectViewer_LoadForceSides;
 bool ExtConfigs::GridObjectViewer_LoadObjectBrowserCategory;
 bool ExtConfigs::HiDPIAwareness;
 bool ExtConfigs::HiDPIAwareness_ScaleIsoView;
+bool ExtConfigs::DisplayRealHPinTechnoDlg;
 
 CInfantryData ExtConfigs::DefaultInfantryProperty;
 CUnitData ExtConfigs::DefaultUnitProperty;
@@ -369,6 +371,7 @@ void FA2sp::ExtConfigsInitialize()
 	ExtConfigs::ExtFacings = CINI::FAData->GetBool("ExtConfigs", "ExtFacings");
 	ExtConfigs::ExtTilts = CINI::FAData->GetBool("ExtConfigs", "ExtTilts");
 	ExtConfigs::ExtFacings_Drag = CINI::FAData->GetBool("ExtConfigs", "ExtFacings.Drag");
+	ExtConfigs::ExtFacings_Scroll = CINI::FAData->GetBool("ExtConfigs", "ExtFacings.Scroll");
 	ExtConfigs::ExtFacings_DragPreview = CINI::FAData->GetBool("ExtConfigs", "ExtFacings.DragPreview", true);
 	ExtConfigs::ExtVariables = CINI::FAData->GetBool("ExtConfigs", "ExtVariables");
 	ExtConfigs::AIRepairDefaultYes = CINI::FAData->GetBool("ExtConfigs", "AIRepairDefaultYes");
@@ -413,6 +416,7 @@ void FA2sp::ExtConfigsInitialize()
 	ExtConfigs::FlatToGroundHideExtra = CINI::FAData->GetBool("ExtConfigs", "FlatToGroundHideExtra");
 	ExtConfigs::ExtOverlays = CINI::FAData->GetBool("ExtConfigs", "ExtOverlays");
 	ExtConfigs::LoadObjectsOnInit = CINI::FAData->GetBool("ExtConfigs", "LoadObjectsOnInit");
+	ExtConfigs::DisplayRealHPinTechnoDlg = CINI::FAData->GetBool("ExtConfigs", "DisplayRealHPinTechnoDlg", true);
 
 	ExtConfigs::DistanceRuler_Records = CINI::FAData->GetInteger("ExtConfigs", "DistanceRuler.Records", 5);
 	ExtConfigs::DisplayTextSize = CINI::FAData->GetInteger("ExtConfigs", "DisplayTextSize", 18);
@@ -587,6 +591,26 @@ void FA2sp::ExtConfigsInitialize()
 	ExtConfigs::DefaultBuildingProperty.Upgrade3 = building[14];
 	ExtConfigs::DefaultBuildingProperty.AIRepairable = building[15];
 	ExtConfigs::DefaultBuildingProperty.Nominal = building[16];
+
+	// Initialize per-type placement facings on a preset grid (step depends on ExtFacings;
+	// infantry always stays at 8 directions => step 32). Snapping to the nearest preset so
+	// values changed at runtime by the mouse wheel stay valid.
+	{
+		auto SnapFacing = [](const ppmfc::CString& str, int step) -> int
+		{
+			int v = atoi(str);
+			v = ((v + step / 2) / step) * step;
+			v %= 256;
+			if (v < 0)
+				v += 256;
+			return v;
+		};
+		const int step = ExtConfigs::ExtFacings_Scroll ? 8 : 32;
+		CIsoViewExt::AutoPropertyBrushFacing[0] = SnapFacing(ExtConfigs::DefaultAircraftProperty.Facing, step);
+		CIsoViewExt::AutoPropertyBrushFacing[1] = SnapFacing(ExtConfigs::DefaultBuildingProperty.Facing, step);
+		CIsoViewExt::AutoPropertyBrushFacing[2] = SnapFacing(ExtConfigs::DefaultInfantryProperty.Facing, 32);
+		CIsoViewExt::AutoPropertyBrushFacing[3] = SnapFacing(ExtConfigs::DefaultUnitProperty.Facing, step);
+	}
 
 	auto formats = STDHelpers::SplitString(CINI::FAData->GetString("ExtConfigs", "SupportedFormats", "map,mpr,yrm,mmx,yro"));
 	for (auto &f : formats)
@@ -818,6 +842,12 @@ void ExtConfigs::UpdateOptionTranslations()
 		.DisplayName = Translations::TranslateOrDefault("Options.DisableLuaConsoleSafetyCheck", "Disable Lua console safety check"),
 		.IniKey = "DisableLuaConsoleSafetyCheck",
 		.Value = &ExtConfigs::DisableLuaConsoleSafetyCheck,
+		.Type = ExtConfigs::SpecialOptionType::None});
+
+	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
+		.DisplayName = Translations::TranslateOrDefault("Options.DisplayRealHPinTechnoDlg", "Display real HP in techno dialogs"),
+		.IniKey = "DisplayRealHPinTechnoDlg",
+		.Value = &ExtConfigs::DisplayRealHPinTechnoDlg,
 		.Type = ExtConfigs::SpecialOptionType::None});
 
 	// Object Browser Settings
@@ -1273,6 +1303,12 @@ void ExtConfigs::UpdateOptionTranslations()
 		.DisplayName = Translations::TranslateOrDefault("Options.ExtFacings.DragPreview", "Preview facing while draging"),
 		.IniKey = "ExtFacings.DragPreview",
 		.Value = &ExtConfigs::ExtFacings_DragPreview,
+		.Type = ExtConfigs::SpecialOptionType::None});
+
+	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{
+		.DisplayName = Translations::TranslateOrDefault("Options.ExtFacings.Scroll", "Allow scroll units into 32 facings when placing"),
+		.IniKey = "ExtFacings.Scroll",
+		.Value = &ExtConfigs::ExtFacings_Scroll,
 		.Type = ExtConfigs::SpecialOptionType::None});
 		
 	ExtConfigs::Options.push_back(ExtConfigs::DynamicOptions{

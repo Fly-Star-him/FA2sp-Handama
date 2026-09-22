@@ -80,6 +80,7 @@ bool CIsoViewExt::UsingNewRaiseGround = false;
 RendererLighting CIsoViewExt::RenderLighing = RendererLighting::Current;
 
 bool CIsoViewExt::AutoPropertyBrush[4] = {false};
+int CIsoViewExt::AutoPropertyBrushFacing[4] = {0, 0, 0, 0}; // [0]=Aircraft [1]=Building [2]=Infantry [3]=Vehicle
 bool CIsoViewExt::IsPressingALT = false;
 bool CIsoViewExt::IsPressingTube = false;
 bool CIsoViewExt::EnableLiveDistanceRuler = false;
@@ -4336,6 +4337,11 @@ CRect CIsoViewExt::GetVisibleIsoViewRect()
 
 void CIsoViewExt::SpecialDraw(LPDIRECTDRAWSURFACE7 surface, int specialDraw)
 {
+    // Mouse moves and canvas redraws end up here, so stop the animation preview
+    // (the caller's rendering flow repaints the visible area right after this,
+    // so nothing has to be erased here).
+    AnimPreview::OnUserInterrupt();
+
     auto pThis = CIsoViewExt::GetExtension();
     switch (specialDraw)
     {
@@ -4577,6 +4583,9 @@ void CIsoViewExt::SpecialDraw(LPDIRECTDRAWSURFACE7 surface, int specialDraw)
 
 void CIsoViewExt::SpecialDrawDirectX(int specialDraw)
 {
+    // Same as SpecialDraw: an interactive redraw stops the animation preview.
+    AnimPreview::OnUserInterrupt();
+
     auto pThis = CIsoViewExt::GetExtension();
     HDC hDC = nullptr;
     static CRect rect = {};
