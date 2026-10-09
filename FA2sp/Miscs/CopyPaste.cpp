@@ -56,6 +56,8 @@ void CopyPaste::Copy(const std::set<MapCoord>& coords)
         auto pos = CMapData::Instance->GetCoordIndex(coords.X, coords.Y);
         auto pCell = CMapData::Instance->GetCellAt(pos);
         auto& pCellExt = CMapDataExt::CellDataExts[pos];
+        auto pColdExt = CMapDataExt::GetColdOrNull(pos);
+        const auto& structures = pColdExt ? pColdExt->Structures : CMapDataExt::EmptyCold.Structures;
 
         MyClipboardData item = {};
         auto tileIndex = pCell->TileIndex == 0xFFFF ? 0 : pCell->TileIndex;
@@ -94,12 +96,12 @@ void CopyPaste::Copy(const std::set<MapCoord>& coords)
             }
         }
 
-        if (pCellExt.Structures.size() >= 1)
+        if (structures.size() >= 1)
         {
-            auto it = pCellExt.Structures.begin();
+            auto it = structures.begin();
             std::advance(it, 0);
             int iniIndex = CMapDataExt::StructureIndexMap[it->first];
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Structures", iniIndex);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Structures", iniIndex);
             auto atoms = STDHelpers::SplitString(value, 16);
             if (coords.X == atoi(atoms[4]) && coords.Y == atoi(atoms[3]))
             {
@@ -107,12 +109,12 @@ void CopyPaste::Copy(const std::set<MapCoord>& coords)
                 objectMask |= ObjectRecord::RecordType::Building;
             }
         }
-        if (pCellExt.Structures.size() >= 2)
+        if (structures.size() >= 2)
         {
-            auto it = pCellExt.Structures.begin();
+            auto it = structures.begin();
             std::advance(it, 1);
             int iniIndex = CMapDataExt::StructureIndexMap[it->first];
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Structures", iniIndex);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Structures", iniIndex);
             auto atoms = STDHelpers::SplitString(value, 16);
             if (coords.X == atoi(atoms[4]) && coords.Y == atoi(atoms[3]))
             {
@@ -120,12 +122,12 @@ void CopyPaste::Copy(const std::set<MapCoord>& coords)
                 objectMask |= ObjectRecord::RecordType::Building;
             }
         }
-        if (pCellExt.Structures.size() >= 3)
+        if (structures.size() >= 3)
         {
-            auto it = pCellExt.Structures.begin();
+            auto it = structures.begin();
             std::advance(it, 2);
             int iniIndex = CMapDataExt::StructureIndexMap[it->first];
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Structures", iniIndex);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Structures", iniIndex);
             auto atoms = STDHelpers::SplitString(value, 16);
             if (coords.X == atoi(atoms[4]) && coords.Y == atoi(atoms[3]))
             {
@@ -135,29 +137,29 @@ void CopyPaste::Copy(const std::set<MapCoord>& coords)
         }
 
         if (pCell->Aircraft > -1) {
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Aircraft", pCell->Aircraft);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Aircraft", pCell->Aircraft);
             pushString(value.GetString(), item.AircraftData);
             objectMask |= ObjectRecord::RecordType::Aircraft;
         }
 
         if (pCell->Infantry[0] > -1) {
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Infantry", pCell->Infantry[0]);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Infantry", pCell->Infantry[0]);
             pushString(value.GetString(), item.InfantryData_1);
             objectMask |= ObjectRecord::RecordType::Infantry;
         }
         if (pCell->Infantry[1] > -1) {
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Infantry", pCell->Infantry[1]);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Infantry", pCell->Infantry[1]);
             pushString(value.GetString(), item.InfantryData_2);
             objectMask |= ObjectRecord::RecordType::Infantry;
         }
         if (pCell->Infantry[2] > -1) {
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Infantry", pCell->Infantry[2]);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Infantry", pCell->Infantry[2]);
             pushString(value.GetString(), item.InfantryData_3);
             objectMask |= ObjectRecord::RecordType::Infantry;
         }
 
         if (pCell->Unit > -1) {
-            ppmfc::CString value = CINI::CurrentDocument->GetValueAt("Units", pCell->Unit);
+            ppmfc::CString value = CINIExt::CurrentDocument->GetValueAt("Units", pCell->Unit);
             pushString(value.GetString(), item.UnitData);
             objectMask |= ObjectRecord::RecordType::Unit;
         }
@@ -452,7 +454,7 @@ void CopyPaste::Paste(int X, int Y, int nBaseHeight, MyClipboardData* data, size
             pCell->Overlay = std::min(cell.Overlay, (word)0xff);
             pCellExt.NewOverlay = cell.Overlay;
             pCell->OverlayData = cell.OverlayData;
-            CMapDataExt::NewOverlay[Y + offset_y + (X + offset_x) * 512] = cell.Overlay;
+            CMapDataExt::NewOverlay[Y + offset_y + (X + offset_x) * CMapDataExt::X_PLUS_Y_LIMIT] = cell.Overlay;
             CMapData::Instance->AddTiberium(std::min(pCellExt.NewOverlay, (word)0xFF), pCell->OverlayData);
         }
         if (CIsoViewExt::PasteGround)
@@ -524,7 +526,7 @@ void CopyPaste::Paste(int X, int Y, int nBaseHeight, MyClipboardData* data, size
                 }
                 else if (buildingStr)
                 {
-					pCellExt.PasteBuilding = buildingStr;
+					CMapDataExt::GetCold(nCellIndex).PasteBuilding = buildingStr;
 				}
             }
         }
@@ -542,7 +544,7 @@ void CopyPaste::Paste(int X, int Y, int nBaseHeight, MyClipboardData* data, size
             }
             else
             {
-                pCellExt.PasteSmudge = smudgeStr;
+                CMapDataExt::GetCold(nCellIndex).PasteSmudge = smudgeStr;
             }
         }
 
@@ -555,7 +557,7 @@ void CopyPaste::Paste(int X, int Y, int nBaseHeight, MyClipboardData* data, size
             }
             else
             {
-                pCellExt.PasteTerrain = terrainStr;
+                CMapDataExt::GetCold(nCellIndex).PasteTerrain = terrainStr;
             }
         }
 
@@ -585,7 +587,7 @@ void CopyPaste::Paste(int X, int Y, int nBaseHeight, MyClipboardData* data, size
             }
             else
             {
-                pCellExt.PasteUnit = unitStr;
+                CMapDataExt::GetCold(nCellIndex).PasteUnit = unitStr;
             }
         }
 
@@ -613,7 +615,7 @@ void CopyPaste::Paste(int X, int Y, int nBaseHeight, MyClipboardData* data, size
             }
             else
             {
-                pCellExt.PasteAircraft = aircraftStr;
+                CMapDataExt::GetCold(nCellIndex).PasteAircraft = aircraftStr;
             }
         }
 
@@ -647,7 +649,7 @@ void CopyPaste::Paste(int X, int Y, int nBaseHeight, MyClipboardData* data, size
                 }
                 else
                 {
-                    pCellExt.PasteInfantry[i] = inf;
+                    CMapDataExt::GetCold(nCellIndex).PasteInfantry[i] = inf;
                 }
             }
         }

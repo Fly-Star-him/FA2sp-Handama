@@ -1,8 +1,10 @@
 #include "Body.h"
+#include "../../Miscs/Hooks.INI.h"
 #include <CUpdateProgress.h>
 #include "../../Helpers/Translations.h"
 #include "../../ExtraWindow/CMeasurementToolbox/CMeasurementToolbox.h"
 #include "../../Helpers/Helper.h"
+#include "../../Miscs/Hooks.PreviewFix.h"
 
 bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 {
@@ -71,8 +73,11 @@ bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 
 	CellDatas = GameCreateVector<CellData>((MapWidthPlusHeight + 1) * (MapWidthPlusHeight + 1));
 	CellDataCount = (MapWidthPlusHeight + 1) * (MapWidthPlusHeight + 1);
-	CellDataExts.clear();
-	CellDataExts.resize(CellDataCount);
+	// Re-allocate instead of resize: opening / creating / resizing a map is a rare operation,
+	// and keeping the capacity of the biggest map that was ever opened wastes hundreds of MB.
+	CellDataExts = std::vector<CellDataExt>(CellDataCount);
+	// Cold data is keyed by the CellDataExts index, so it must not survive a re-allocation.
+	CMapDataExt::ClearColds();
 
 	if (IsoPackData != NULL) GameDeleteArray(IsoPackData, IsoPackDataCount);
 	IsoPackData = NULL;
@@ -108,25 +113,35 @@ bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 	oldCellDatas = NULL;
 
 	// overlay
-	auto oldOverlay = new WORD[0x40000];
-	auto oldOverlayData = new BYTE[0x40000];
-	std::copy(std::begin(NewOverlay), std::end(NewOverlay), oldOverlay);
-	std::fill(std::begin(NewOverlay), std::end(NewOverlay), 0xFFFF);
-	std::copy(std::begin(OverlayData), std::end(OverlayData), oldOverlayData);
-	std::fill(std::begin(OverlayData), std::end(OverlayData), 0x0);
-
-	for (int y = 0; y < 512; ++y)
+	int oldLimit = GetXPlusYLimit(os);
+	if (NewOverlay.size() != oldLimit * oldLimit)
 	{
-		for (int x = 0; x < 512; ++x)
+		NewOverlay.assign(oldLimit * oldLimit, 0xFFFF);
+		NewOverlayData.assign(oldLimit * oldLimit, 0);
+	}
+
+	auto oldOverlay = new WORD[oldLimit * oldLimit];
+	auto oldOverlayData = new BYTE[oldLimit * oldLimit];
+	std::copy(NewOverlay.begin(), NewOverlay.end(), oldOverlay);
+	std::copy(NewOverlayData.begin(), NewOverlayData.end(), oldOverlayData);
+
+	X_PLUS_Y_LIMIT = GetXPlusYLimit(MapWidthPlusHeight);
+	NewOverlay = std::vector<WORD>(X_PLUS_Y_LIMIT * X_PLUS_Y_LIMIT, 0xFFFF);
+	NewOverlayData = std::vector<BYTE>(X_PLUS_Y_LIMIT * X_PLUS_Y_LIMIT, 0);
+
+	MapPreviewFix::UpdateBuffer(Size.Width, Size.Height);
+
+	for (int y = 0; y < oldLimit; ++y)
+	{
+		for (int x = 0; x < oldLimit; ++x)
 		{
 			int new_x = x + x_move;
 			int new_y = y + y_move;
 
 			if (IsCoordInMap(new_x, new_y))
 			{
-				NewOverlay[new_x * 512 + new_y] = oldOverlay[x * 512 + y];
-				Overlay[new_x * 512 + new_y] = std::min((WORD)0xff, oldOverlay[x * 512 + y]);
-				OverlayData[new_x * 512 + new_y] = oldOverlayData[x * 512 + y];
+				NewOverlay[new_x * X_PLUS_Y_LIMIT + new_y] = oldOverlay[x * oldLimit + y];
+				NewOverlayData[new_x * X_PLUS_Y_LIMIT + new_y] = oldOverlayData[x * oldLimit + y];
 			}
 		}
 	}
@@ -283,7 +298,7 @@ bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 	}
 	UpdateFieldBasenodeData(false);
 
-	if (auto pSection = CINI::CurrentDocument->GetSection("Tubes"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Tubes"))
 	{
 		for (const auto& [key, value] : pSection->GetEntities())
 		{
@@ -308,12 +323,12 @@ bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 				val += ",";
 			}
 			val.Delete(val.GetLength() - 1, 1);
-			CINI::CurrentDocument->WriteString(pSection, key, val);
+			CINIExt::CurrentDocument->WriteString(pSection, key, val);
 		}
 	}
 	UpdateFieldTubeData(false);
 
-	if (auto pSection = CINI::CurrentDocument->GetSection("Annotations"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Annotations"))
 	{
 		std::vector<std::pair<FString, FString>> annotations;
 		for (const auto& [key, value] : pSection->GetEntities())
@@ -326,16 +341,16 @@ bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 			buffer.Format("%d", y + x * 1000);
 			annotations.push_back(std::make_pair(FString(buffer), FString(value)));
 		}
-		CINI::CurrentDocument->DeleteSection("Annotations");
-		pSection = CINI::CurrentDocument->AddSection("Annotations");
+		CINIExt::CurrentDocument->DeleteSection("Annotations");
+		pSection = CINIExt::CurrentDocument->AddSection("Annotations");
 		for (const auto& [key, value] : annotations)
 		{
-			CINI::CurrentDocument->WriteString(pSection, key, value);
+			CINIExt::CurrentDocument->WriteString(pSection, key, value);
 		}
 	}
 	CMapDataExt::UpdateAnnotation();
 
-	if (auto pSection = CINI::CurrentDocument->GetSection("GeometricAnnotations"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("GeometricAnnotations"))
 	{
 		std::vector<FString> keysToDelete;
 		for (auto& [key, value] : pSection->GetEntities())
@@ -358,7 +373,7 @@ bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 		}
 		for (auto& key : keysToDelete)
 		{
-			CINI::CurrentDocument->DeleteKey(pSection, key);
+			CINIExt::CurrentDocument->DeleteKey(pSection, key);
 		}
 	}
 	CMapDataExt::UpdateGeometricAnnotation();
@@ -434,7 +449,7 @@ bool CMapDataExt::ResizeMapExt(MapRect* const pRect)
 	{
 		for (int x = 0; x < MapWidthPlusHeight; ++x)
 		{
-			CellDataExts[x + y * MapWidthPlusHeight].NewOverlay = NewOverlay[x * 512 + y];
+			CellDataExts[x + y * MapWidthPlusHeight].NewOverlay = NewOverlay[x * X_PLUS_Y_LIMIT + y];
 			UpdateMapPreviewAt(x, y);
 		}
 	}
@@ -472,10 +487,15 @@ bool CMapDataExt::ResizeMap_AllocCellData(MapRect* const pRect)
 	LocalSize = newLocalSize;
 	MapWidthPlusHeight = Size.Width + Size.Height;
 
+	MapPreviewFix::UpdateBuffer(Size.Width, Size.Height);
+
 	CellDatas = GameCreateVector<CellData>((MapWidthPlusHeight + 1) * (MapWidthPlusHeight + 1));
 	CellDataCount = (MapWidthPlusHeight + 1) * (MapWidthPlusHeight + 1);
-	CellDataExts.clear();
-	CellDataExts.resize(CellDataCount);
+	// Re-allocate instead of resize: opening / creating / resizing a map is a rare operation,
+	// and keeping the capacity of the biggest map that was ever opened wastes hundreds of MB.
+	CellDataExts = std::vector<CellDataExt>(CellDataCount);
+	// Cold data is keyed by the CellDataExts index, so it must not survive a re-allocation.
+	CMapDataExt::ClearColds();
 
 	if (IsoPackData != NULL) GameDeleteArray(IsoPackData, IsoPackDataCount);
 	IsoPackData = NULL;

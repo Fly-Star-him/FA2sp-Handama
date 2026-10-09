@@ -1,4 +1,5 @@
 #include "Body.h"
+#include "../../Miscs/Hooks.INI.h"
 
 #include <FA2PP.h>
 #include <Helpers/Macro.h>
@@ -321,8 +322,11 @@ DEFINE_HOOK(4572E1, CIsoView_OnMouseMove_Cliff, 6)
     auto point = CIsoViewExt::GetExtension()->GetCurrentMapCoord(CIsoView::GetInstance()->MouseCurrentPosition);
     if (CIsoView::CurrentCommand->Command == 0x1E)
     {
+        // A connection point that sits just outside the map (e.g. x == -1) is a
+        // valid chain end with all of its blocks still on the map, so only the
+        // height marker (-1 == no anchor) may disable the AutoConnect preview.
         if (CViewObjectsExt::PlaceConnectedTile_AutoConnect
-            && CViewObjectsExt::CliffConnectionCoord.X > -1 && CViewObjectsExt::CliffConnectionCoord.Y > -1)
+            && CViewObjectsExt::CliffConnectionHeight != -1)
         {
             // live whole-path preview following the cursor
             CViewObjectsExt::AutoConnect_UpdatePreview(point.X, point.Y);
@@ -1201,7 +1205,7 @@ DEFINE_HOOK(461766, CIsoView_OnLButtonDown_PropertyBrush, 5)
                                 continue;
                 
                             int intKey = gx * 1000 + gy;
-                            CINI::CurrentDocument->WriteString("CellTags", std::to_string(intKey).c_str(), CIsoView::CurrentCommand->ObjectID);
+                            CINIExt::CurrentDocument->WriteString("CellTags", std::to_string(intKey).c_str(), CIsoView::CurrentCommand->ObjectID);
                         }
                     }         
                 }

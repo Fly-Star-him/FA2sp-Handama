@@ -1,11 +1,14 @@
 #include "Body.h"
 
+#include "../../Algorithms/lzo.h"
 #include "../../Miscs/SaveMap.h"
 
 #include <CFinalSunApp.h>
 #include <CFinalSunDlg.h>
 #include <corecrt_math_defines.h>
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <queue>
 #include <vector>
@@ -58,6 +61,31 @@ std::vector<BuildingRenderData> CMapDataExt::BuildingRenderDatasFix;
 std::vector<OverlayTypeData> CMapDataExt::OverlayTypeDatas;
 CellDataExt CMapDataExt::CellDataExt_FindCell;
 std::vector<CellDataExt> CMapDataExt::CellDataExts;
+std::unordered_map<int, CellDataExtColdData> CMapDataExt::CellDataExtColds;
+CellDataExtColdData CMapDataExt::EmptyCold;
+
+CellDataExtColdData& CMapDataExt::GetCold(int index)
+{
+    return CMapDataExt::CellDataExtColds[index];
+}
+
+CellDataExtColdData* CMapDataExt::GetColdOrNull(int index)
+{
+    auto it = CMapDataExt::CellDataExtColds.find(index);
+    return it == CMapDataExt::CellDataExtColds.end() ? nullptr : &it->second;
+}
+
+void CMapDataExt::PruneColdIfEmpty(int index)
+{
+    auto it = CMapDataExt::CellDataExtColds.find(index);
+    if (it != CMapDataExt::CellDataExtColds.end() && it->second.IsEmpty())
+        CMapDataExt::CellDataExtColds.erase(it);
+}
+
+void CMapDataExt::ClearColds()
+{
+    CMapDataExt::CellDataExtColds.clear();
+}
 CellData CMapDataExt::ExtTempCellData;
 //MapCoord CMapDataExt::CurrentMapCoord;
 MapCoord CMapDataExt::CurrentMapCoordPaste;
@@ -87,6 +115,8 @@ bool CMapDataExt::DeleteBuildingByIniID = false;
 std::unordered_set<int> CMapDataExt::ShoreTileSets;
 std::unordered_map<int, bool> CMapDataExt::SoftTileSets;
 FString CMapDataExt::BitmapImporterTheater;
+int CMapDataExt::BitmapImporterWidth;
+int CMapDataExt::BitmapImporterHeight;
 Palette CMapDataExt::Palette_ISO;
 Palette CMapDataExt::Palette_ISO_NoTint;
 Palette CMapDataExt::Palette_Shadow;
@@ -110,7 +140,27 @@ std::unordered_set<int> CMapDataExt::RedrawExtraTileSets;
 std::unordered_set<int> CMapDataExt::NoHeightRedrawTileSets;
 std::unordered_map<int, Palette*> CMapDataExt::TileSetPalettes;
 int CMapDataExt::NewINIFormat = 4;
-WORD CMapDataExt::NewOverlay[0x40000] = {0xFFFF};
+int CMapDataExt::X_PLUS_Y_LIMIT = 1024;
+
+int CMapDataExt::GetXPlusYLimit(int mapWidthPlusHeight)
+{
+	// NewOverlay / NewOverlayData are indexed as [x * X_PLUS_Y_LIMIT + y], so the limit
+	// must be able to hold the whole map. Each step below doubles the index space.
+	if (mapWidthPlusHeight > MAX_MAP_WIDTH_PLUS_HEIGHT)
+	{
+		Logger::Error("The width plus height of the map is %d, which is not supported (the maximum is %d).\n",
+			mapWidthPlusHeight, MAX_MAP_WIDTH_PLUS_HEIGHT);
+		std::abort(); // Such a map would overflow the overlay buffers
+	}
+
+	if (mapWidthPlusHeight >= 1024)
+		return 2048;
+
+	return mapWidthPlusHeight >= 512 ? 1024 : 512;
+}
+
+std::vector<WORD> CMapDataExt::NewOverlay;
+std::vector<BYTE> CMapDataExt::NewOverlayData;
 HistoryList CMapDataExt::UndoRedoDatas;
 HistoryList CMapDataExt::PreviewHistoryData;
 bool CMapDataExt::RecordingPreviewHistory = false;
@@ -119,7 +169,6 @@ bool CMapDataExt::IsLoadingMapFile = false;
 bool CMapDataExt::IsMMXFile = false;
 bool CMapDataExt::IsUTF8File = false;
 bool CMapDataExt::SkipBuildingOverlappingCheck = false;
-std::vector<FString> CMapDataExt::MapIniSectionSorting;
 FMap<FSet> CMapDataExt::PowersUpBuildings;
 FSet CMapDataExt::PowersUpBuildingSet;
 std::map<int, std::vector<CustomTile>> CMapDataExt::CustomTiles;
@@ -954,7 +1003,7 @@ BuildingPowers CMapDataExt::GetStructurePower(ppmfc::CString value)
 
 void CMapDataExt::GetBuildingDataByIniID(int bldID, CBuildingData& data)
 {
-	auto atoms = STDHelpers::SplitString(CINI::CurrentDocument->GetValueAt("Structures", bldID), 16);
+	auto atoms = STDHelpers::SplitString(CINIExt::CurrentDocument->GetValueAt("Structures", bldID), 16);
 	data.House = atoms[0];
 	data.TypeID = atoms[1];
 	data.Health = atoms[2];
@@ -1004,7 +1053,7 @@ void CMapDataExt::AddCellTagExt(const char* lpTag, int dwPos)
                 continue;
 
 			int intKey = gx * 1000 + gy;
-			CINI::CurrentDocument->WriteString("CellTags", std::to_string(intKey).c_str(), lpTag);
+			CINIExt::CurrentDocument->WriteString("CellTags", std::to_string(intKey).c_str(), lpTag);
         }
     }
 
@@ -1015,7 +1064,7 @@ void CMapDataExt::UpdateTriggers()
 {
 	CMapDataExt::Triggers.clear();
 	FMap<FString> TagMap;
-	if (auto pSection = CINI::CurrentDocument().GetSection("Tags"))
+	if (auto pSection = CINIExt::CurrentDocument().GetSection("Tags"))
 	{
 		for (auto& kvp : pSection->GetEntities())
 		{
@@ -1025,7 +1074,7 @@ void CMapDataExt::UpdateTriggers()
 				TagMap[tagAtoms[2]] = kvp.first;
 		}
 	}
-	if (auto pSection = CINI::CurrentDocument->GetSection("Triggers")) {
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Triggers")) {
 		for (const auto& pair : pSection->GetEntities()) {
 			std::shared_ptr<Trigger> trigger(Trigger::create(pair.first, &TagMap));
 			if (!trigger) {
@@ -1090,7 +1139,7 @@ void CMapDataExt::ReloadTrigger(const FString& id)
 {
 	auto it = Triggers.find(id);
 	if (it != Triggers.end()) {
-		auto atoms = FString::SplitString(CINI::CurrentDocument->GetString("Triggers", id));
+		auto atoms = FString::SplitString(CINIExt::CurrentDocument->GetString("Triggers", id));
 		it->second->LoadFromMap(id, atoms);
 	}
 }
@@ -1973,7 +2022,7 @@ int CMapDataExt::GetRampIndex(int tileIndex, int rampType)
 void CMapDataExt::UpdateFieldStructureData_Index(int iniIndex, ppmfc::CString value, bool refreshCenter)
 {
 	if (value == "")
-		value = CINI::CurrentDocument->GetValueAt("Structures", iniIndex);
+		value = CINIExt::CurrentDocument->GetValueAt("Structures", iniIndex);
 
 	int cellIndex = StructureIndexMap.size();
 	if (cellIndex > SHRT_MAX && !CIsoView::IsMouseMoving)
@@ -2023,7 +2072,7 @@ void CMapDataExt::UpdateFieldStructureData_Index(int iniIndex, ppmfc::CString va
 					if (coord < CMapData::Instance->CellDataCount)
 					{
 						auto pCell = CMapData::Instance->GetCellAt(coord);
-						CMapDataExt::CellDataExts[coord].Structures_insert(cellIndex, BuildingIndex);
+						CMapDataExt::GetCold(coord).Structures_insert(cellIndex, BuildingIndex);
 						pCell->Structure = cellIndex;
 						pCell->TypeListIndex = BuildingIndex;
 						if (!CMapDataExt::SkipUpdateMinimap)
@@ -2042,7 +2091,7 @@ void CMapDataExt::UpdateFieldStructureData_Index(int iniIndex, ppmfc::CString va
 				if (coord < CMapData::Instance->CellDataCount)
 				{
 					auto pCell = CMapData::Instance->GetCellAt(coord);
-					CMapDataExt::CellDataExts[coord].Structures_insert(cellIndex, BuildingIndex);
+					CMapDataExt::GetCold(coord).Structures_insert(cellIndex, BuildingIndex);
 					pCell->Structure = cellIndex;
 					pCell->TypeListIndex = BuildingIndex;
 					if (!CMapDataExt::SkipUpdateMinimap)
@@ -2076,17 +2125,25 @@ void CMapDataExt::UpdateFieldStructureData_Optimized()
 	BuildingCenterCoords.clear();
 	BuildingDatasExt.clear();
 
+	// Only cells that actually carry structures have an entry in the cold table.
+	for (auto it = CMapDataExt::CellDataExtColds.begin(); it != CMapDataExt::CellDataExtColds.end(); )
+	{
+		it->second.Structures.clear();
+		if (it->second.IsEmpty())
+			it = CMapDataExt::CellDataExtColds.erase(it);
+		else
+			++it;
+	}
 	int i = 0;
 	for (i = 0; i < fielddata_size; i++)
 	{
-		CMapDataExt::CellDataExts[i].Structures.clear();
 		fielddata[i].Structure = -1;
 		fielddata[i].TypeListIndex = -1;
 	}
 	StructureIndexMap.clear();
 	BuildingRenderDatasFix.clear();
 	BuildingDatasExt.clear();
-	if (auto sec = CINI::CurrentDocument->GetSection("Structures"))
+	if (auto sec = CINIExt::CurrentDocument->GetSection("Structures"))
 	{
 		i = 0;
 		BuildingRenderDatasFix.reserve(sec->GetEntities().size());
@@ -2112,7 +2169,7 @@ std::vector<int> CMapDataExt::GetStructureSize(ppmfc::CString structure)
 	std::vector<int> result;
 	MultimapHelper mmh;
 	mmh.AddINI(&CINI::Rules());
-	mmh.AddINI(&CINI::CurrentDocument());
+	mmh.AddINI(&CINIExt::CurrentDocument());
 	auto art = &CINI::Art();
 	auto image = mmh.GetString(structure, "Image", structure);
 	std::string foundation = std::string(art->GetString(image, "Foundation", "1X1"));
@@ -2221,7 +2278,7 @@ ppmfc::CString CMapDataExt::GetAvailableIndex(EIndexType type)
 		type = EIndexType::Generic;
 
 	auto v = VEHGuard(false);
-	auto& ini = CINI::CurrentDocument;
+	auto& ini = CINIExt::CurrentDocument;
 	const int initNumber = 1000000;
 
 	const char* suffix = "";
@@ -2315,19 +2372,19 @@ ppmfc::CString CMapDataExt::GetAvailableIndex(EIndexType type)
 
 void CMapDataExt::UpdateMapSectionIndicies(const ppmfc::CString& lpSection)
 {
-	if (auto pSection = CINI::CurrentDocument->GetSection(lpSection))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection(lpSection))
 	{
 		std::vector<std::pair<FString, FString>> buffer;
 		for (auto& [key, value] : pSection->GetEntities())
 		{
 			buffer.push_back(std::make_pair(key, value));
 		}
-		CINI::CurrentDocument->DeleteSection(lpSection);
-		pSection = CINI::CurrentDocument->AddSection(lpSection);
+		CINIExt::CurrentDocument->DeleteSection(lpSection);
+		pSection = CINIExt::CurrentDocument->AddSection(lpSection);
 		int index = 0;
 		for (auto& [key, value] : buffer)
 		{
-			CINI::CurrentDocument->WriteString(pSection, key, value);
+			CINIExt::CurrentDocument->WriteString(pSection, key, value);
 			std::pair<ppmfc::CString, int> ins =
 				std::make_pair((ppmfc::CString)key, index++);
 			std::pair<INIIndiceDict::iterator, bool> ret;
@@ -2343,7 +2400,7 @@ void CMapDataExt::UpdateAnnotation()
 	{
 		cellExt.HasAnnotation = false;
 	}
-	if (auto pSection = CINI::CurrentDocument->GetSection("Annotations"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Annotations"))
 	{
 		for (const auto& [key, value] : pSection->GetEntities())
 		{
@@ -2363,7 +2420,7 @@ void CMapDataExt::UpdateGeometricAnnotation()
 	CIsoViewExt::Circles_Annotation.clear();
 	CIsoViewExt::TempCircle_Annotation[0] = { 0, 0 };
 	CIsoViewExt::TempCircle_Annotation[1] = { 0, 0 };
-	if (auto pSection = CINI::CurrentDocument->GetSection("GeometricAnnotations"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("GeometricAnnotations"))
 	{
 		for (const auto& [key, value] : pSection->GetEntities())
 		{
@@ -2400,9 +2457,9 @@ void CMapDataExt::SetNewOverlayAt(int x, int y, WORD ovr, bool smoothOre)
 		ovr = 0xFFFF;
 
 	int dwPos = GetCoordIndex(x, y);
-	int olyPos = y + x * 512;
+	int olyPos = y + x * X_PLUS_Y_LIMIT;
 
-	if (olyPos > 262144 || dwPos > CellDataCount) return;
+	if (olyPos > X_PLUS_Y_LIMIT * X_PLUS_Y_LIMIT || dwPos > CellDataCount) return;
 
 	auto& ovrl = CellDataExts[dwPos].NewOverlay;
 	auto& ovrld = CellDatas[dwPos].OverlayData;
@@ -2410,11 +2467,10 @@ void CMapDataExt::SetNewOverlayAt(int x, int y, WORD ovr, bool smoothOre)
 	DeleteTiberium(std::min(ovrl, (word)0xFF), ovrld);
 
 	NewOverlay[olyPos] = ovr;
-	Overlay[olyPos] = std::min(ovr, (WORD)0xff);
 	CellDataExts[dwPos].NewOverlay = ovr;
 	CellDatas[dwPos].Overlay = std::min(ovr, (WORD)0xff);
 
-	OverlayData[olyPos] = 0;
+	NewOverlayData[olyPos] = 0;
 	CellDatas[dwPos].OverlayData = 0;
 
 	auto& ovrl2 = CellDataExts[dwPos].NewOverlay;
@@ -2444,7 +2500,7 @@ void CMapDataExt::SetNewOverlayAt(int pos, WORD ovr, bool smoothOre)
 void CMapDataExt::SetNewOverlayDataAt(int x, int y, byte ovrd, bool smoothOre)
 {
 	int pos = GetCoordIndex(x, y);
-	if (y + x * 512 > 262144 || pos >= CellDataCount) return;
+	if (y + x * X_PLUS_Y_LIMIT > X_PLUS_Y_LIMIT * X_PLUS_Y_LIMIT || pos >= CellDataCount) return;
 
 	auto ovrl = GetOverlayAt(pos);
 	auto ovrld = GetOverlayDataAt(pos);
@@ -2462,7 +2518,7 @@ void CMapDataExt::SetNewOverlayDataAt(int x, int y, byte ovrd, bool smoothOre)
 		}
 	}
 
-	OverlayData[y + x * 512] = ovrd;
+	NewOverlayData[y + x * X_PLUS_Y_LIMIT] = ovrd;
 	CellDatas[pos].OverlayData = ovrd;
 }
 
@@ -2527,9 +2583,9 @@ int CMapDataExt::GetPlayerLocationCountAtCell(int x, int y)
 	{
 		FString key;
 		key.Format("%d", i);
-		if (CINI::CurrentDocument->KeyExists("Waypoints", key))
+		if (CINIExt::CurrentDocument->KeyExists("Waypoints", key))
 		{
-			auto value = CINI::CurrentDocument->GetInteger("Waypoints", key);
+			auto value = CINIExt::CurrentDocument->GetInteger("Waypoints", key);
 			if (value >= 0)
 			{
 				int wx = value / 1000;
@@ -2591,6 +2647,34 @@ std::unique_ptr<TerrainRecord> CMapDataExt::MakeTerrainRecord(int left, int top,
 	return std::move(data);
 }
 
+namespace
+{
+	// A cell is only skipped when every field captured by a TerrainRecord equals
+	// its empty value. TileIndex 0 and 0xFFFF are equivalent empties here.
+	inline bool IsDefaultTerrainCell(const CellData* cell, WORD newOverlay)
+	{
+		return cell->Height == 0
+			&& cell->TileIndexHiPart == 0
+			&& cell->TileSubIndex == 0
+			&& cell->IceGrowth == 0
+			&& (cell->TileIndex == 0 || cell->TileIndex == 0xFFFF)
+			&& newOverlay == 0xFFFF
+			&& cell->OverlayData == 0
+			&& cell->Flag.AltIndex == 0;
+	}
+
+	inline int PopCountByte(BYTE value)
+	{
+		int count = 0;
+		while (value)
+		{
+			count += value & 1;
+			value >>= 1;
+		}
+		return count;
+	}
+}
+
 void TerrainRecord::record(int left, int top, int right, int bottom)
 {
 	auto pThis = CMapDataExt::GetExtension();
@@ -2603,85 +2687,254 @@ void TerrainRecord::record(int left, int top, int right, int bottom)
 	if (right == 0) right = pThis->MapWidthPlusHeight;
 	if (bottom == 0) bottom = pThis->MapWidthPlusHeight;
 
-	int width, height;
-	width = right - left;
-	height = bottom - top;
+	const int width = right - left;
+	const int height = bottom - top;
 
-	int size = width * height;
 	this->left = left;
 	this->top = top;
 	this->right = right;
 	this->bottom = bottom;
-	this->bHeight = std::make_unique<BYTE[]>(size);
-	this->bMapData = std::make_unique<WORD[]>(size);
-	this->bSubTile = std::make_unique<BYTE[]>(size);
-	this->bMapData2 = std::make_unique<BYTE[]>(size);
-	this->wGround = std::make_unique<WORD[]>(size);
-	this->overlay = std::make_unique<WORD[]>(size);
-	this->overlaydata = std::make_unique<BYTE[]>(size);
-	this->bRedrawTerrain = std::make_unique<BOOL[]>(size);
-	this->bRNDData = std::make_unique<BYTE[]>(size);
 
-	int i, e;
-	for (i = 0; i < width; i++)
+	this->data.clear();
+	this->compressed = false;
+
+	if (width <= 0 || height <= 0)
+		return;
+
+	const int size = width * height;
+	const int bitmapBytes = (size + 7) / 8;
+
+	// Pass 1: mark the non-default cells that have to be stored.
+	std::vector<BYTE> bitmap(bitmapBytes, 0);
+	int defaultCount = 0;
+	int outOfMapCount = 0;
+	for (int i = 0; i < width; i++)
 	{
-		for (e = 0; e < height; e++)
+		for (int e = 0; e < height; e++)
 		{
-			int pos_w, pos_r;
-			pos_w = i + e * width;
-			pos_r = left + i + (top + e) * pThis->MapWidthPlusHeight;
-			auto cell = pThis->GetCellAt(pos_r);
-			auto& cellExt = pThis->CellDataExts[pos_r];
-			this->bHeight[pos_w] = cell->Height;
-			this->bMapData[pos_w] = cell->TileIndexHiPart;
-			this->bSubTile[pos_w] = cell->TileSubIndex;
-			this->bMapData2[pos_w] = cell->IceGrowth;
-			this->wGround[pos_w] = cell->TileIndex;
-			this->overlay[pos_w] = cellExt.NewOverlay;
-			this->overlaydata[pos_w] = cell->OverlayData;
-			this->bRedrawTerrain[pos_w] = cell->Flag.RedrawTerrain;
-			this->bRNDData[pos_w] = cell->Flag.AltIndex;
+			const int x = left + i;
+			const int y = top + e;
+			// Cells outside the map are neither recorded nor restored.
+			if (!pThis->IsCoordInMap(x, y))
+			{
+				++outOfMapCount;
+				continue;
+			}
+
+			const int pos_w = i + e * width;
+			const int pos_r = x + y * pThis->MapWidthPlusHeight;
+			const auto cell = pThis->GetCellAt(pos_r);
+			const auto& cellExt = pThis->CellDataExts[pos_r];
+			if (IsDefaultTerrainCell(cell, cellExt.NewOverlay))
+				++defaultCount;
+			else
+				bitmap[pos_w >> 3] |= static_cast<BYTE>(1u << (pos_w & 7));
 		}
+	}
+
+	const int storedCount = size - defaultCount - outOfMapCount;
+
+	// Pass 2: gather the stored cells into structure-of-arrays planes.
+	std::vector<BYTE> packed(static_cast<size_t>(bitmapBytes) + static_cast<size_t>(storedCount) * 11);
+	if (bitmapBytes > 0)
+		memcpy(packed.data(), bitmap.data(), static_cast<size_t>(bitmapBytes));
+
+	BYTE* pHeight = packed.data() + bitmapBytes;
+	BYTE* pMapData = pHeight + storedCount;                                  // WORD
+	BYTE* pSubTile = pMapData + static_cast<size_t>(storedCount) * 2;
+	BYTE* pMapData2 = pSubTile + storedCount;
+	BYTE* pGround = pMapData2 + storedCount;                                 // WORD
+	BYTE* pOverlay = pGround + static_cast<size_t>(storedCount) * 2;         // WORD
+	BYTE* pOverlayData = pOverlay + static_cast<size_t>(storedCount) * 2;
+	BYTE* pRND = pOverlayData + storedCount;
+
+	int k = 0;
+	for (int i = 0; i < width; i++)
+	{
+		for (int e = 0; e < height; e++)
+		{
+			const int pos_w = i + e * width;
+			if (!(bitmap[pos_w >> 3] & (1u << (pos_w & 7))))
+				continue;
+
+			const int pos_r = left + i + (top + e) * pThis->MapWidthPlusHeight;
+			const auto cell = pThis->GetCellAt(pos_r);
+			const auto& cellExt = pThis->CellDataExts[pos_r];
+
+			const WORD mapData = cell->TileIndexHiPart;
+			const WORD ground = cell->TileIndex;
+			const WORD overlay = cellExt.NewOverlay;
+
+			pHeight[k] = cell->Height;
+			memcpy(pMapData + static_cast<size_t>(k) * 2, &mapData, 2);
+			pSubTile[k] = cell->TileSubIndex;
+			pMapData2[k] = cell->IceGrowth;
+			memcpy(pGround + static_cast<size_t>(k) * 2, &ground, 2);
+			memcpy(pOverlay + static_cast<size_t>(k) * 2, &overlay, 2);
+			pOverlayData[k] = cell->OverlayData;
+			pRND[k] = static_cast<BYTE>(cell->Flag.AltIndex);
+			++k;
+		}
+	}
+
+	// Keep the raw packing when compression would not shrink it.
+	const int packedSize = static_cast<int>(packed.size());
+	std::string compressedData = lzo::compress(packed.data(), packedSize);
+	if (static_cast<int>(compressedData.size()) < packedSize)
+	{
+		this->data.assign(compressedData.begin(), compressedData.end());
+		this->compressed = true;
+	}
+	else
+	{
+		this->data = std::move(packed);
+		this->compressed = false;
 	}
 }
 
 void TerrainRecord::recover()
 {
 	auto pThis = CMapDataExt::GetExtension();
-	int left, top, width, height;
-	left = this->left;
-	top = this->top;
-	width = this->right - left;
-	height = this->bottom - top;
 
-	int i, e;
-	for (i = 0; i < width; i++)
+	const int left = this->left;
+	const int top = this->top;
+	const int width = this->right - left;
+	const int height = this->bottom - top;
+
+	if (width <= 0 || height <= 0)
+		return;
+
+	const int size = width * height;
+	const int bitmapBytes = (size + 7) / 8;
+
+	// Reuse a thread-local buffer to avoid a large allocation on every undo/redo.
+	static thread_local std::vector<BYTE> decompressBuffer;
+	const BYTE* blob = nullptr;
+	int blobSize = 0;
+
+	if (this->compressed)
 	{
-		for (e = 0; e < height; e++)
+		const int maxSize = bitmapBytes + size * 11;
+		decompressBuffer.resize(maxSize);
+		const int written = lzo::decompressTo(decompressBuffer.data(), maxSize,
+			this->data.data(), static_cast<int>(this->data.size()));
+		if (written < 0)
 		{
-			int pos_w, pos_r;
-			pos_r = i + e * width;
-			pos_w = left + i + (top + e) * pThis->MapWidthPlusHeight;
+			Logger::Error("[History] TerrainRecord::recover failed to decompress %d bytes\n",
+				static_cast<int>(this->data.size()));
+			return;
+		}
+		blob = decompressBuffer.data();
+		blobSize = written;
+	}
+	else
+	{
+		blob = this->data.data();
+		blobSize = static_cast<int>(this->data.size());
+	}
+
+	if (blobSize < bitmapBytes)
+	{
+		Logger::Error("[History] TerrainRecord::recover corrupted record (%d < %d)\n",
+			blobSize, bitmapBytes);
+		return;
+	}
+
+	const BYTE* bitmap = blob;
+	int storedCount = 0;
+	for (int b = 0; b < bitmapBytes; ++b)
+		storedCount += PopCountByte(bitmap[b]);
+
+	const int expectedSize = bitmapBytes + storedCount * 11;
+	if (blobSize != expectedSize)
+	{
+		Logger::Error("[History] TerrainRecord::recover size mismatch (%d != %d)\n",
+			blobSize, expectedSize);
+		return;
+	}
+
+	const BYTE* pHeight = blob + bitmapBytes;
+	const BYTE* pMapData = pHeight + storedCount;                            // WORD
+	const BYTE* pSubTile = pMapData + static_cast<size_t>(storedCount) * 2;
+	const BYTE* pMapData2 = pSubTile + storedCount;
+	const BYTE* pGround = pMapData2 + storedCount;                           // WORD
+	const BYTE* pOverlay = pGround + static_cast<size_t>(storedCount) * 2;   // WORD
+	const BYTE* pOverlayData = pOverlay + static_cast<size_t>(storedCount) * 2;
+	const BYTE* pRND = pOverlayData + storedCount;
+
+	int k = 0;
+	for (int i = 0; i < width; i++)
+	{
+		for (int e = 0; e < height; e++)
+		{
+			const int x = left + i;
+			const int y = top + e;
+			// Cells outside the map were never recorded, so leave them untouched.
+			if (!pThis->IsCoordInMap(x, y))
+				continue;
+
+			const int pos_r = i + e * width;
+			const int pos_w = x + y * pThis->MapWidthPlusHeight;
 			auto cell = pThis->GetCellAt(pos_w);
 			auto& cellExt = pThis->CellDataExts[pos_w];
 
-			cell->Height = this->bHeight[pos_r];
-			cell->TileIndexHiPart = this->bMapData[pos_r];
-			cell->TileSubIndex = this->bSubTile[pos_r];
-			cell->IceGrowth = this->bMapData2[pos_r];
-			cell->TileIndex = this->wGround[pos_r];
+			BYTE cellHeight, cellSubTile, cellMapData2, cellOverlayData, cellRnd;
+			WORD cellMapData, cellGround, cellOverlay;
 
-			pThis->DeleteTiberium(std::min(cellExt.NewOverlay, (word)0xFF), cell->OverlayData);
-			cellExt.NewOverlay = this->overlay[pos_r];
-			cell->Overlay = std::min(this->overlay[pos_r], (word)0xFF);
-			cell->OverlayData = this->overlaydata[pos_r];
-			CMapDataExt::NewOverlay[e + i * 512] = this->overlay[pos_r];
-			pThis->AddTiberium(std::min(cellExt.NewOverlay, (word)0xFF), cell->OverlayData);
+			if (bitmap[pos_r >> 3] & (1u << (pos_r & 7)))
+			{
+				cellHeight = pHeight[k];
+				memcpy(&cellMapData, pMapData + static_cast<size_t>(k) * 2, 2);
+				cellSubTile = pSubTile[k];
+				cellMapData2 = pMapData2[k];
+				memcpy(&cellGround, pGround + static_cast<size_t>(k) * 2, 2);
+				memcpy(&cellOverlay, pOverlay + static_cast<size_t>(k) * 2, 2);
+				cellOverlayData = pOverlayData[k];
+				cellRnd = pRND[k];
+				++k;
+			}
+			else
+			{
+				cellHeight = 0;
+				cellMapData = 0;
+				cellSubTile = 0;
+				cellMapData2 = 0;
+				cellGround = 0xFFFF;
+				cellOverlay = 0xFFFF;
+				cellOverlayData = 0;
+				cellRnd = 0;
+			}
 
-			cell->Flag.RedrawTerrain = this->bRedrawTerrain[pos_r];
-			cell->Flag.AltIndex = this->bRNDData[pos_r];
+			const bool overlayChanged = cellExt.NewOverlay != cellOverlay || cell->OverlayData != cellOverlayData;
+			const bool terrainChanged =
+				cell->Height != cellHeight
+				|| cell->TileIndexHiPart != cellMapData
+				|| cell->TileSubIndex != cellSubTile
+				|| cell->IceGrowth != cellMapData2
+				|| cell->TileIndex != cellGround
+				|| static_cast<BYTE>(cell->Flag.AltIndex) != cellRnd;
 
-			pThis->UpdateMapPreviewAt(left + i, top + e);
+			cell->Height = cellHeight;
+			cell->TileIndexHiPart = cellMapData;
+			cell->TileSubIndex = cellSubTile;
+			cell->IceGrowth = cellMapData2;
+			cell->TileIndex = cellGround;
+
+			if (overlayChanged)
+			{
+				pThis->DeleteTiberium(std::min(cellExt.NewOverlay, (word)0xFF), cell->OverlayData);
+				cellExt.NewOverlay = cellOverlay;
+				cell->Overlay = std::min(cellOverlay, (word)0xFF);
+				cell->OverlayData = cellOverlayData;
+				CMapDataExt::NewOverlay[e + i * CMapDataExt::X_PLUS_Y_LIMIT] = cellOverlay;
+				CMapDataExt::NewOverlayData[e + i * CMapDataExt::X_PLUS_Y_LIMIT] = cellOverlayData;
+				pThis->AddTiberium(std::min(cellExt.NewOverlay, (word)0xFF), cell->OverlayData);
+			}
+
+			cell->Flag.AltIndex = cellRnd;
+
+			if (terrainChanged || overlayChanged)
+				pThis->UpdateMapPreviewAt(left + i, top + e);
 		}
 	}
 }
@@ -3079,7 +3332,7 @@ void ObjectRecord::recover()
 	{
 		std::map<int, FString> oriWps;
 		if (map->IsMultiOnly())
-			if (auto pSection = CINI::CurrentDocument->GetSection("Waypoints"))
+			if (auto pSection = CINIExt::CurrentDocument->GetSection("Waypoints"))
 				for (const auto& data : pSection->GetEntities())
 					oriWps[atoi(data.first)] = data.second;
 		recoverIniMap("Waypoints", WaypointList);
@@ -3126,7 +3379,7 @@ void ObjectRecord::recover()
 
 		FString size;
 		size.Format("%d,%d,%d,%d", bound.left, bound.top, bound.width, bound.height);
-		CINI::CurrentDocument->WriteString("Map", "LocalSize", size);
+		CINIExt::CurrentDocument->WriteString("Map", "LocalSize", size);
 		if (IsWindowVisible(CFinalSunDlg::Instance->MapD))
 		{
 			auto dlg = GetDlgItem(CFinalSunDlg::Instance->MapD, 1045);
@@ -3377,7 +3630,7 @@ void CMapDataExt::UpdateFieldAircraftData_RedrawMinimap()
 void CMapDataExt::InitializeTileDataInfo()
 {
 	auto pLoading = CLoadingExt::GetExtension();
-	FString thisTheater = CINI::CurrentDocument().GetString("Map", "Theater");
+	FString thisTheater = CINIExt::CurrentDocument().GetString("Map", "Theater");
 	thisTheater.MakeUpper();
 
 	if (thisTheater == "TEMPERATE")
@@ -3539,7 +3792,7 @@ void CMapDataExt::InitializeTileDataInfo()
 
 	if (auto pSection = CINI::FAData->GetSection("AutoShoreTypes"))
 	{
-		auto thisTheater = CINI::CurrentDocument().GetString("Map", "Theater");
+		auto thisTheater = CINIExt::CurrentDocument().GetString("Map", "Theater");
 		for (const auto& type : pSection->GetEntities())
 		{
 			auto atoms = STDHelpers::SplitString(type.second, 3);
@@ -3629,7 +3882,7 @@ void CMapDataExt::InitializeTileData()
 	CMapDataExt::TileData = nullptr;
 	CMapDataExt::TileBlockDataExt.clear();
 
-	auto thisTheater = CINI::CurrentDocument().GetString("Map", "Theater");
+	auto thisTheater = CINIExt::CurrentDocument().GetString("Map", "Theater");
 	thisTheater.MakeUpper();
 	if (thisTheater == "TEMPERATE" && CTileTypeInfo::Temperate().Datas)
 	{
@@ -3920,9 +4173,9 @@ bool CMapDataExt::CellCannotDrag(int x, int y)
 		cellpos = 0;
 
 	auto cell = Instance->GetCellAt(cellpos);
-	auto& cellExt = CellDataExts[cellpos];
+	auto pCold = GetColdOrNull(cellpos);
 
-	return !pIsoView->Drag && CIsoView::CurrentCommand->Command == 0 && cell->Aircraft == -1 && cell->Unit == -1 && cell->Structure == -1 && cell->Terrain == -1 && cell->Smudge == -1 && cell->Waypoint == -1 && cell->CellTag == -1 && cell->Infantry[0] == -1 && cell->Infantry[1] == -1 && cell->Infantry[2] == -1 && cell->Infantry[2] == -1 && cellExt.BaseNodes.empty() && cellExt.SmudgeParts.empty() && !CMapDataExt::HasAnnotation(cellpos);
+	return !pIsoView->Drag && CIsoView::CurrentCommand->Command == 0 && cell->Aircraft == -1 && cell->Unit == -1 && cell->Structure == -1 && cell->Terrain == -1 && cell->Smudge == -1 && cell->Waypoint == -1 && cell->CellTag == -1 && cell->Infantry[0] == -1 && cell->Infantry[1] == -1 && cell->Infantry[2] == -1 && cell->Infantry[2] == -1 && (pCold == nullptr || pCold->BaseNodes.empty()) && (pCold == nullptr || pCold->SmudgeParts.empty()) && !CMapDataExt::HasAnnotation(cellpos);
 }
 
 bool CMapDataExt::IsHiddenCell(CellData* pCell)
@@ -5502,7 +5755,7 @@ void CMapDataExt::InitializeAllHdmEdition(bool updateMinimap, bool reloadCellDat
 			if (atoms.size() >= 3)
 			{
 				std::vector<FString> group;
-				if (CINI::CurrentDocument().GetString("Map", "Theater") != atoms[0])
+				if (CINIExt::CurrentDocument().GetString("Map", "Theater") != atoms[0])
 					continue;
 				group.push_back(atoms[1]);
 				group.push_back(atoms[2]);
@@ -5857,23 +6110,13 @@ void CMapDataExt::InitializeAllHdmEdition(bool updateMinimap, bool reloadCellDat
 
 	if (reloadCellDataExt)
 	{
-		CMapDataExt::CellDataExts.clear();
-		CMapDataExt::CellDataExts.resize(CMapData::Instance->CellDataCount);
+		// Re-allocate instead of resize: opening / creating / resizing a map is a rare operation,
+		// and keeping the capacity of the biggest map that was ever opened wastes hundreds of MB.
+		CMapDataExt::CellDataExts = std::vector<CellDataExt>(CMapData::Instance->CellDataCount);
+		// Cold data is keyed by the CellDataExts index, so it must not survive a re-allocation.
+		CMapDataExt::ClearColds();
 		UndoRedoDatas.clear();
 		UndoRedoDataIndex = -1;
-	}
-
-	if (updateMinimap)
-	{
-		// just update coords with overlays to show correct color
-		for (int i = 0; i < CMapData::Instance->MapWidthPlusHeight; i++) {
-			for (int j = 0; j < CMapData::Instance->MapWidthPlusHeight; j++) {
-				CMapDataExt::CellDataExts[i + j * CMapData::Instance->MapWidthPlusHeight].NewOverlay = CMapDataExt::NewOverlay[j + i * 512];
-				if (CMapDataExt::GetExtension()->GetOverlayAt(CMapData::Instance->GetCoordIndex(i, j)) != 0xFFFF) {
-					CMapData::Instance->UpdateMapPreviewAt(i, j);
-				}
-			}
-		}
 	}
 
 	for (auto& [_, ID] : Variables::RulesMap.GetSection("InfantryTypes"))
@@ -5914,30 +6157,30 @@ void CMapDataExt::InitializeAllHdmEdition(bool updateMinimap, bool reloadCellDat
 
 	CustomWaypointColors.clear();
 	CustomCelltagColors.clear();
-	if (auto pColors = CINI::CurrentDocument->GetSection("FA2spColors"))
+	if (auto pColors = CINIExt::CurrentDocument->GetSection("FA2spColors"))
 	{
-		if (auto pSection = CINI::CurrentDocument->GetSection("Waypoints"))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection("Waypoints"))
 		{
 			for (const auto& [key, value] : pSection->GetEntities())
 			{
 				ppmfc::CString colorkey = "Wp";
 				colorkey += key;
-				if (CINI::CurrentDocument->KeyExists("FA2spColors", colorkey))
+				if (CINIExt::CurrentDocument->KeyExists("FA2spColors", colorkey))
 				{
-					auto color = CINI::CurrentDocument->GetColor(pColors, colorkey, ExtConfigs::DisplayColor_Waypoint);
+					auto color = CINIExt::CurrentDocument->GetColor(pColors, colorkey, ExtConfigs::DisplayColor_Waypoint);
 					CMapDataExt::CustomWaypointColors[key] = color;
 				}
 			}
 		}
-		if (auto pSection = CINI::CurrentDocument->GetSection("CellTags"))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection("CellTags"))
 		{
 			for (const auto& [key, value] : pSection->GetEntities())
 			{
 				ppmfc::CString colorkey = "Tag";
 				colorkey += value;
-				if (CINI::CurrentDocument->KeyExists("FA2spColors", colorkey))
+				if (CINIExt::CurrentDocument->KeyExists("FA2spColors", colorkey))
 				{
-					auto color = CINI::CurrentDocument->GetColor(pColors, colorkey, ExtConfigs::DisplayColor_Celltag);
+					auto color = CINIExt::CurrentDocument->GetColor(pColors, colorkey, ExtConfigs::DisplayColor_Celltag);
 					CMapDataExt::CustomCelltagColors[value] = color;
 				}
 			}
@@ -6017,7 +6260,7 @@ void CMapDataExt::InitializeAllHdmEdition(bool updateMinimap, bool reloadCellDat
 		};
 	for (int i = 0; i < 3; ++i)
 	{
-		if (auto pSection = CINI::CurrentDocument->GetSection(WAESections[i]))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection(WAESections[i]))
 		{
 			for (auto& [key, value] : pSection->GetEntities())
 			{

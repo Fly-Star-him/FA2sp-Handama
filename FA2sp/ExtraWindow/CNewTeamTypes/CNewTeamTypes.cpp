@@ -1,4 +1,5 @@
 #include "CNewTeamTypes.h"
+#include "../../Miscs/Hooks.INI.h"
 #include "../CNewTaskforce/CNewTaskforce.h"
 #include "../CNewScript/CNewScript.h"
 #include "../CNewTrigger/CNewTrigger.h"
@@ -27,7 +28,7 @@
 
 HWND CNewTeamTypes::m_hwnd;
 CFinalSunDlg* CNewTeamTypes::m_parent;
-CINI& CNewTeamTypes::map = CINI::CurrentDocument;
+CINIExt& CNewTeamTypes::map = CINIExt::CurrentDocument;
 MultimapHelper& CNewTeamTypes::rules = Variables::RulesMap;
 HWND CNewTeamTypes::hSelectedTeam;
 HWND CNewTeamTypes::hNewTeam;
@@ -370,9 +371,7 @@ void CNewTeamTypes::Update(HWND& hWnd)
     ExtraWindow::ClearComboKeepText(hTransportWaypoint);
     ExtraWindow::ClearComboKeepText(hParaDropPlane);
     vcbTransportWaypoint.AddString("None");
-
-
-    if (auto pSection = CINI::CurrentDocument->GetSection("Waypoints"))
+    if (auto pSection = CINIExt::CurrentDocument->GetSection("Waypoints"))
     {
         FString output;
         for (auto& pair : pSection->GetEntities())
@@ -1714,11 +1713,22 @@ void CNewTeamTypes::OnSelchangeTeamtypes(bool edited)
             else
                 SendMessage(hwnd, WM_SETTEXT, 0, (LPARAM)text);
         };
+        auto SetWpCurSel = [](VirtualComboBoxEx& vcb, const char* text)
+        {
+            FString wp = text;
+            if (wp != "None")
+			    wp += " ";
+			int idx = vcb.FindStringExactStart(wp);
+            if (idx != CB_ERR)
+				vcb.SetCurSel(idx);
+			else
+				vcb.SetEditText(text);
+        };
 
         SetCurSel(hVeteranLevel, map.GetString(pID, "VeteranLevel").GetString());
         SetCurSel(hTechlevel, map.GetString(pID, "TechLevel").GetString());
-        SetCurSel(hTransportWaypoint, tWaypoint.GetString());
-        SetCurSel(hWaypoint, waypoint.GetString());
+        SetWpCurSel(vcbTransportWaypoint, tWaypoint.GetString());
+        SetWpCurSel(vcbWaypoint, waypoint.GetString());
         SendMessage(hPriority, WM_SETTEXT, 0, (LPARAM)map.GetString(pID, "Priority").GetString());
         SendMessage(hMax, WM_SETTEXT, 0, (LPARAM)map.GetString(pID, "Max").GetString());
         SetCurSel(hGroup, map.GetString(pID, "Group").GetString());
@@ -1855,7 +1865,7 @@ void CNewTeamTypes::OnClickTurnToTransportWaypoint()
 
     FString value = vcbTransportWaypoint.GetSelectedText(true);
 	FString::TrimIndex(value);
-    if (auto pCord = CINI::CurrentDocument->TryGetString("Waypoints", value))
+    if (auto pCord = CINIExt::CurrentDocument->TryGetString("Waypoints", value))
     {
         auto second = atoi(*pCord);
         if (second > 0)
@@ -1872,7 +1882,7 @@ void CNewTeamTypes::OnClickTurnToWaypoint()
 
     FString value = vcbWaypoint.GetSelectedText(true);
     FString::TrimIndex(value);
-    if (auto pCord = CINI::CurrentDocument->TryGetString("Waypoints", value))
+    if (auto pCord = CINIExt::CurrentDocument->TryGetString("Waypoints", value))
     {
         auto second = atoi(*pCord);
         if (second > 0)
@@ -2018,12 +2028,12 @@ void CNewTeamTypes::OnClickCloTeam(HWND& hWnd)
         auto key = CINI::GetAvailableKey("TeamTypes");
         auto value = CMapDataExt::GetAvailableIndex(EIndexType::Team);
 
-        CINI::CurrentDocument->WriteString("TeamTypes", key, value);
+        CINIExt::CurrentDocument->WriteString("TeamTypes", key, value);
 
-        auto oldname = CINI::CurrentDocument->GetString(CurrentTeamID, "Name", "New Teamtype");
+        auto oldname = CINIExt::CurrentDocument->GetString(CurrentTeamID, "Name", "New Teamtype");
         FString newName = ExtraWindow::GetCloneName(oldname);
 
-        CINI::CurrentDocument->WriteString(value, "Name", newName);
+        CINIExt::CurrentDocument->WriteString(value, "Name", newName);
 
         auto copyitem = [&value](FString key)
             {

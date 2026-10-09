@@ -1,6 +1,9 @@
 #include "Body.h"
+#include "../../Miscs/Hooks.INI.h"
 
 #include <Helpers/Macro.h>
+#include <CINI.h>
+#include "../../Helpers/CINIOrderTracker.h"
 
 #include "../../FA2sp.h"
 #include "../../Helpers/TheaterHelpers.h"
@@ -16,6 +19,7 @@
 #include "../CTileSetBrowserFrame/TabPages/TaskForceSort.h"
 #include "../CTileSetBrowserFrame/TabPages/ScriptSort.h"
 #include "../../Miscs/Palettes.h"
+#include "../../Miscs/Hooks.PreviewFix.h"
 #include "../CLoading/Body.h"
 #include "../../ExtraWindow/CLuaConsole/CLuaConsole.h"
 
@@ -431,7 +435,7 @@ DEFINE_HOOK(4AC210, CMapData_AddInfantry, 7)
 			std::vector<int> availableAndEmptySubcells;
 			auto& name = CMapData::Instance->TerrainDatas[cell->Terrain].TypeID;
 			ppmfc::CString key = "TemperateOccupationBits";
-			auto theaterIg = CINI::CurrentDocument->GetString("Map", "Theater");
+			auto theaterIg = CINIExt::CurrentDocument->GetString("Map", "Theater");
 			if (theaterIg == "SNOW")
 				key = "SnowOccupationBits";
 
@@ -921,7 +925,7 @@ DEFINE_HOOK(4A8FB0, CMapData_DeleteStructure, 7)
 	GET_STACK(unsigned int, cellIndex, 0x4);
 
 	auto& mapdata = CMapData::Instance();
-	auto& ini = CINI::CurrentDocument;
+	auto& ini = CINIExt::CurrentDocument;
 	if (!ini->SectionExists("Structures"))
 		return 0x4A98AC;
 
@@ -968,7 +972,7 @@ DEFINE_HOOK(4A8FB0, CMapData_DeleteStructure, 7)
 				if (pos < CMapData::Instance->CellDataCount)
 				{
 					auto pCell = CMapData::Instance->GetCellAt(pos);
-					auto& cellExt = CMapDataExt::CellDataExts[pos];
+					auto& cellExt = CMapDataExt::GetCold(pos);
 					cellExt.Structures_erase(cellIndex);
 					if (cellExt.Structures.empty())
 					{
@@ -980,6 +984,7 @@ DEFINE_HOOK(4A8FB0, CMapData_DeleteStructure, 7)
 						pCell->Structure = cellExt.Structures.begin()->first;
 						pCell->TypeListIndex = cellExt.Structures.begin()->second;
 					}
+					CMapDataExt::PruneColdIfEmpty(pos);
 
 					if (!CMapDataExt::SkipUpdateMinimap)
 						CMapData::Instance->UpdateMapPreviewAt(x, y);
@@ -997,7 +1002,7 @@ DEFINE_HOOK(4A8FB0, CMapData_DeleteStructure, 7)
 			if (pos < CMapData::Instance->CellDataCount)
 			{
 				auto pCell = CMapData::Instance->GetCellAt(pos);
-				auto& cellExt = CMapDataExt::CellDataExts[pos];
+				auto& cellExt = CMapDataExt::GetCold(pos);
 				cellExt.Structures_erase(cellIndex);
 				if (cellExt.Structures.empty())
 				{
@@ -1009,6 +1014,7 @@ DEFINE_HOOK(4A8FB0, CMapData_DeleteStructure, 7)
 					pCell->Structure = cellExt.Structures.begin()->first;
 					pCell->TypeListIndex = cellExt.Structures.begin()->second;
 				}
+				CMapDataExt::PruneColdIfEmpty(pos);
 
 				if (!CMapDataExt::SkipUpdateMinimap)
 					CMapData::Instance->UpdateMapPreviewAt(x, y);
@@ -1093,7 +1099,7 @@ DEFINE_HOOK(4B9E38, CMapData_CreateMap_InitializeMapDataExt, 5)
 	CMapDataExt::IsUTF8File = false;
 	Logger::Debug("CMapData::CreateMap(): About to call InitializeAllHdmEdition()\n");
 	CMapDataExt::InitializeAllHdmEdition();
-	CMapDataExt::MapIniSectionSorting.clear();
+	CINIOrderTracker::Clear(&CINIExt::CurrentDocument);
 	CMapDataExt::MapInlineComments.clear();
 	CMapDataExt::MapFrontlineComments.clear();
 	CMapDataExt::MapInsectionComments.clear();
@@ -1105,7 +1111,16 @@ DEFINE_HOOK(4B9E38, CMapData_CreateMap_InitializeMapDataExt, 5)
 
 DEFINE_HOOK(4B9CB5, CMapData_CreateMap_ClearOverlay, 5)
 {
-	std::fill(std::begin(CMapDataExt::NewOverlay), std::end(CMapDataExt::NewOverlay), 0xFFFF);
+	auto pThis = CMapDataExt::GetExtension();
+
+	CMapDataExt::X_PLUS_Y_LIMIT = CMapDataExt::GetXPlusYLimit(pThis->MapWidthPlusHeight);
+
+	MapPreviewFix::UpdateBuffer(pThis->Size.Width, pThis->Size.Height);
+
+	CMapDataExt::NewOverlay = std::vector<WORD>(CMapDataExt::X_PLUS_Y_LIMIT * CMapDataExt::X_PLUS_Y_LIMIT, 0xFFFF);
+	CMapDataExt::NewOverlayData = std::vector<BYTE>(CMapDataExt::X_PLUS_Y_LIMIT * CMapDataExt::X_PLUS_Y_LIMIT, 0);
+
+	std::fill(CMapDataExt::NewOverlay.begin(), CMapDataExt::NewOverlay.end(), 0xFFFF);
 	CMapDataExt::NewINIFormat = 4;
 	return 0;
 }
@@ -1116,8 +1131,11 @@ DEFINE_HOOK(4B8AD2, CMapData_CreateMap_FixLocalSize, 5)
 	GET_BASE(int, dwWidth, 0x8);
 	GET_BASE(int, dwHeight, 0xC);
 
+	const int localWidth = std::max(dwWidth - 6, 1);
+	const int localHeight = std::max(dwHeight - 11, 1);
+
 	FString localSize;
-	localSize.Format("%d,%d,%d,%d", 3, 5, dwWidth - 6, dwHeight - 11);
+	localSize.Format("%d,%d,%d,%d", 3, 5, localWidth, localHeight);
 
 	memcpy(lpBuffer, localSize.c_str(), std::min(localSize.GetLength(), 40));
 	lpBuffer[std::min(localSize.GetLength(), 40)] = '\0';
@@ -1139,7 +1157,7 @@ DEFINE_HOOK(4A6040, CMapData_UpdateUnits, 6)
 
 		CMapDataExt::UnitDatasExt.clear();
 
-		if (auto pSection = CINI::CurrentDocument->GetSection("Units"))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection("Units"))
 		{
 			CMapDataExt::UnitDatasExt.reserve(pSection->GetEntities().size());
 			int i = 0;
@@ -1166,7 +1184,7 @@ DEFINE_HOOK(4A87A0, CMapData_DeleteUnit, 7)
 {
 	GET(CMapData*, pThis, ECX);
 	GET_STACK(int, index, 0x4);
-	if (auto pSection = CINI::CurrentDocument->GetSection("Units"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Units"))
 	{
 		if (index < pSection->GetEntities().size())
 		{
@@ -1174,7 +1192,7 @@ DEFINE_HOOK(4A87A0, CMapData_DeleteUnit, 7)
 			auto atoms = STDHelpers::SplitString(value, 4);
 			int x = atoi(atoms[4]);
 			int y = atoi(atoms[3]);
-			CINI::CurrentDocument->DeleteKey(pSection, *pSection->GetKeyAt(index));
+			CINIExt::CurrentDocument->DeleteKey(pSection, *pSection->GetKeyAt(index));
 			pThis->UpdateFieldUnitData(false);
 			if (!CMapDataExt::SkipUpdateMinimap)
 				pThis->UpdateMapPreviewAt(x, y);
@@ -1196,7 +1214,7 @@ DEFINE_HOOK(4A4270, CMapData_UpdateAircraft, 6)
 		}
 		CMapDataExt::AircraftDatasExt.clear();
 
-		if (auto pSection = CINI::CurrentDocument->GetSection("Aircraft"))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection("Aircraft"))
 		{
 			int i = 0;
 			CMapDataExt::AircraftDatasExt.reserve(pSection->GetEntities().size());
@@ -1223,7 +1241,7 @@ DEFINE_HOOK(4A98B0, CMapData_DeleteAircraft, 7)
 {
 	GET(CMapData*, pThis, ECX);
 	GET_STACK(int, index, 0x4);
-	if (auto pSection = CINI::CurrentDocument->GetSection("Aircraft"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Aircraft"))
 	{
 		if (index < pSection->GetEntities().size())
 		{
@@ -1231,7 +1249,7 @@ DEFINE_HOOK(4A98B0, CMapData_DeleteAircraft, 7)
 			auto atoms = STDHelpers::SplitString(value, 4);
 			int x = atoi(atoms[4]);
 			int y = atoi(atoms[3]);
-			CINI::CurrentDocument->DeleteKey(pSection, *pSection->GetKeyAt(index));
+			CINIExt::CurrentDocument->DeleteKey(pSection, *pSection->GetKeyAt(index));
 			pThis->UpdateFieldAircraftData(false);
 			if (!CMapDataExt::SkipUpdateMinimap)
 				pThis->UpdateMapPreviewAt(x, y);
@@ -1252,7 +1270,7 @@ DEFINE_HOOK(4A67D0, CMapData_UpdateWaypoints, 6)
 			pThis->CellDatas[i].Waypoint = -1;
 		}
 
-		if (auto pSection = CINI::CurrentDocument->GetSection("Waypoints"))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection("Waypoints"))
 		{
 			int i = 0;
 			for (const auto& data : pSection->GetEntities())
@@ -1260,7 +1278,7 @@ DEFINE_HOOK(4A67D0, CMapData_UpdateWaypoints, 6)
 				int x =  atoi(data.second) / 1000;
 				int y =  atoi(data.second) % 1000;
 				int pos = pThis->GetCoordIndex(x, y);
-				if (pos < pThis->CellDataCount) 
+				if (pos >= 0 && pos < pThis->CellDataCount)
 					pThis->CellDatas[pos].Waypoint = i;
 
 				if (pThis->IsMultiOnly())
@@ -1281,14 +1299,14 @@ DEFINE_HOOK(4A7CB0, CMapData_DeleteWaypoints, 7)
 {
 	GET(CMapData*, pThis, ECX);
 	GET_STACK(int, index, 0x4);
-	if (auto pSection = CINI::CurrentDocument->GetSection("Waypoints"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Waypoints"))
 	{
 		if (index < pSection->GetEntities().size())
 		{
 			auto& value = *pSection->GetValueAt(index);
 			int x = atoi(value) / 1000;
 			int y = atoi(value) % 1000;
-			CINI::CurrentDocument->DeleteKey(pSection, *pSection->GetKeyAt(index));
+			CINIExt::CurrentDocument->DeleteKey(pSection, *pSection->GetKeyAt(index));
 			pThis->UpdateFieldWaypointData(false);
 
 			if (pThis->IsMultiOnly())
@@ -1310,19 +1328,27 @@ DEFINE_HOOK(4A6FB0, CMapData_UpdateFieldBasenodeData, 6)
 	if (bSave == FALSE)
 	{
 		auto& mapData = CMapData::Instance;
+		// Only cells that actually carry base nodes have an entry in the cold table.
+		for (auto it = CMapDataExt::CellDataExtColds.begin(); it != CMapDataExt::CellDataExtColds.end(); )
+		{
+			it->second.BaseNodes.clear();
+			if (it->second.IsEmpty())
+				it = CMapDataExt::CellDataExtColds.erase(it);
+			else
+				++it;
+		}
 		for (int i = 0; i < mapData->CellDataCount; i++)
 		{
 			mapData->CellDatas[i].BaseNode.BuildingID = -1;
 			mapData->CellDatas[i].BaseNode.BasenodeID = -1;
 			mapData->CellDatas[i].BaseNode.House = "";
-			CMapDataExt::CellDataExts[i].BaseNodes.clear();
 		}
 
-		if (auto pSection = CINI::CurrentDocument->GetSection("Houses"))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection("Houses"))
 		{
 			for (const auto& [key, house] : pSection->GetEntities())
 			{
-				if (auto pHouse = CINI::CurrentDocument->GetSection(house))
+				if (auto pHouse = CINIExt::CurrentDocument->GetSection(house))
 				{
 					for (int j = 0; j < pHouse->GetInteger("NodeCount"); ++j)
 					{
@@ -1344,12 +1370,11 @@ DEFINE_HOOK(4A6FB0, CMapData_UpdateFieldBasenodeData, 6)
 									if (!CMapDataExt::IsCoordInFullMap(bnX + dx, bnY + dy))
 										continue;
 									int pos = mapData->GetCoordIndex(bnX + dx, bnY + dy);
-									auto& cellExt = CMapDataExt::CellDataExts[pos];
 									auto cell = mapData->TryGetCellAt(pos);
 									cell->BaseNode.BuildingID = BuildingIndex;
 									cell->BaseNode.BasenodeID = j;
 									cell->BaseNode.House = house;
-									cellExt.BaseNodes.push_back({ BuildingIndex , j, house, bnX, bnY, ID });
+									CMapDataExt::GetCold(pos).BaseNodes.push_back({ BuildingIndex , j, house, bnX, bnY, ID });
 								}
 							}
 						}
@@ -1360,12 +1385,11 @@ DEFINE_HOOK(4A6FB0, CMapData_UpdateFieldBasenodeData, 6)
 								if (!CMapDataExt::IsCoordInFullMap(bnX + block.X, bnY + block.Y))
 									continue;
 								int pos = mapData->GetCoordIndex(bnX + block.X, bnY + block.Y);
-								auto& cellExt = CMapDataExt::CellDataExts[pos];
 								auto cell = mapData->TryGetCellAt(pos);
 								cell->BaseNode.BuildingID = BuildingIndex;
 								cell->BaseNode.BasenodeID = j;
 								cell->BaseNode.House = house;
-								cellExt.BaseNodes.push_back({ BuildingIndex , j, house, bnX, bnY, ID });
+								CMapDataExt::GetCold(pos).BaseNodes.push_back({ BuildingIndex , j, house, bnX, bnY, ID });
 							}
 						}
 					}
@@ -1455,7 +1479,7 @@ DEFINE_HOOK(4C9EFB, CMapData_AddSmudge, 6)
 	pos >>= 6;
 	uint32_t value = *reinterpret_cast<uint32_t*>(smudgeType + 16);
 
-	auto& cellExt = CMapDataExt::CellDataExts[pos];
+	auto& cellExt = CMapDataExt::GetCold(pos);
 	auto index = CMapData::Instance->CellDatas[pos].Smudge;
 	cellExt.Smudges_insert(index, value);
 	const auto& size = CMapDataExt::SmudgeSizes[CMapData::Instance->SmudgeDatas[index].TypeID];
@@ -1470,7 +1494,7 @@ DEFINE_HOOK(4C9EFB, CMapData_AddSmudge, 6)
 				continue;
 
 			int newPos = CMapData::Instance->GetCoordIndex(X + j, Y + i);
-			auto& cellExt2 = CMapDataExt::CellDataExts[newPos];
+			auto& cellExt2 = CMapDataExt::GetCold(newPos);
 			cellExt2.SmudgeParts_insert(index);
 		}
 	}
@@ -1480,10 +1504,16 @@ DEFINE_HOOK(4C9EFB, CMapData_AddSmudge, 6)
 
 DEFINE_HOOK(4CA1B4, CMapData_UpdateSmudge_Clear, 5)
 {
-	for (auto& cellExt : CMapDataExt::CellDataExts)
+	// Only cells that actually carry smudge data have an entry, so iterating the
+	// cold table is far cheaper than walking all four million cells.
+	for (auto it = CMapDataExt::CellDataExtColds.begin(); it != CMapDataExt::CellDataExtColds.end(); )
 	{
-		cellExt.Smudges.clear();
-		cellExt.SmudgeParts.clear();
+		it->second.Smudges.clear();
+		it->second.SmudgeParts.clear();
+		if (it->second.IsEmpty())
+			it = CMapDataExt::CellDataExtColds.erase(it);
+		else
+			++it;
 	}
 	return 0;
 }
@@ -1494,7 +1524,7 @@ DEFINE_HOOK(4CA41E, CMapData_UpdateSmudge, 8)
 	GET(int, smudgeType, ECX);
 	pos >>= 6;
 
-	auto& cellExt = CMapDataExt::CellDataExts[pos];
+	auto& cellExt = CMapDataExt::GetCold(pos);
 	auto index = CMapData::Instance->CellDatas[pos].Smudge;
 	cellExt.Smudges_insert(index, smudgeType);
 
@@ -1509,7 +1539,7 @@ DEFINE_HOOK(4CA41E, CMapData_UpdateSmudge, 8)
 				continue;
 
 			int newPos = CMapData::Instance->GetCoordIndex(X + j, Y + i);
-			auto& cellExt2 = CMapDataExt::CellDataExts[newPos];
+			auto& cellExt2 = CMapDataExt::GetCold(newPos);
 			cellExt2.SmudgeParts_insert(index);
 		}
 	}
@@ -1520,7 +1550,7 @@ DEFINE_HOOK(4CA41E, CMapData_UpdateSmudge, 8)
 DEFINE_HOOK(4C9F78, CMapData_DeleteSmudge, 6)
 {
 	GET(int, pos, EAX);
-	auto& cellExt = CMapDataExt::CellDataExts[pos];
+	auto& cellExt = CMapDataExt::GetCold(pos);
 	auto cell = CMapData::Instance->GetCellAt(pos);
 	auto index = cell->Smudge;
 	cellExt.Smudges_erase(index);
@@ -1534,6 +1564,7 @@ DEFINE_HOOK(4C9F78, CMapData_DeleteSmudge, 6)
 		cell->Smudge = cellExt.Smudges.begin()->first;
 		cell->SmudgeType = cellExt.Smudges.begin()->second;
 	}
+	CMapDataExt::PruneColdIfEmpty(pos);
 
 	const auto& size = CMapDataExt::SmudgeSizes[CMapData::Instance->SmudgeDatas[index].TypeID];
 	int X = CMapData::Instance->GetXFromCoordIndex(pos);
@@ -1546,7 +1577,7 @@ DEFINE_HOOK(4C9F78, CMapData_DeleteSmudge, 6)
 				continue;
 	
 			int newPos = CMapData::Instance->GetCoordIndex(X + j, Y + i);
-			auto& cellExt2 = CMapDataExt::CellDataExts[newPos];
+			auto& cellExt2 = CMapDataExt::GetCold(newPos);
 			cellExt2.SmudgeParts_erase(index);
 		}
 	}
@@ -1561,7 +1592,7 @@ DEFINE_HOOK(4B1B1F, CMapData_AddTerrain, 8)
 	auto cell = CMapData::Instance->GetCellAt(pos);
 	if (cell->Terrain > -1)
 	{
-		auto& cellExt = CMapDataExt::CellDataExts[pos];
+		auto& cellExt = CMapDataExt::GetCold(pos);
 		cellExt.Terrains_insert(cell->Terrain, cell->TerrainType);
 	}
 
@@ -1570,9 +1601,13 @@ DEFINE_HOOK(4B1B1F, CMapData_AddTerrain, 8)
 
 DEFINE_HOOK(4A5A72, CMapData_UpdateTerrain_Clear, 5)
 {
-	for (auto& cellExt: CMapDataExt::CellDataExts)
+	for (auto it = CMapDataExt::CellDataExtColds.begin(); it != CMapDataExt::CellDataExtColds.end(); )
 	{
-		cellExt.Terrains.clear();
+		it->second.Terrains.clear();
+		if (it->second.IsEmpty())
+			it = CMapDataExt::CellDataExtColds.erase(it);
+		else
+			++it;
 	}
 	return 0;
 }
@@ -1583,7 +1618,7 @@ DEFINE_HOOK(4A5C63, CMapData_UpdateTerrain, 8)
 	GET(int, terrainType, ECX);
 	pos >>= 6;
 
-	auto& cellExt = CMapDataExt::CellDataExts[pos];
+	auto& cellExt = CMapDataExt::GetCold(pos);
 	cellExt.Terrains_insert(CMapData::Instance->CellDatas[pos].Terrain, terrainType);
 
 	return 0;
@@ -1593,7 +1628,7 @@ DEFINE_HOOK(4AA111, CMapData_DeleteTerrain, 6)
 {
 	GET(int, pos, EAX);
 
-	auto& cellExt = CMapDataExt::CellDataExts[pos];
+	auto& cellExt = CMapDataExt::GetCold(pos);
 	auto cell = CMapData::Instance->GetCellAt(pos);
 	cellExt.Terrains_erase(cell->Terrain);
 	if (cellExt.Terrains.empty())
@@ -1606,6 +1641,7 @@ DEFINE_HOOK(4AA111, CMapData_DeleteTerrain, 6)
 		cell->Terrain = cellExt.Terrains.begin()->first;
 		cell->TerrainType = cellExt.Terrains.begin()->second;
 	}
+	CMapDataExt::PruneColdIfEmpty(pos);
 
 	return 0x4C9F93;
 }
@@ -1613,7 +1649,7 @@ DEFINE_HOOK(4AA111, CMapData_DeleteTerrain, 6)
 DEFINE_HOOK(4BA5F0, CMapData_UpdateFieldTubeData, 6)
 {
 	CMapDataExt::Tubes.clear();
-	if (auto pSection = CINI::CurrentDocument->GetSection("Tubes"))
+	if (auto pSection = CINIExt::CurrentDocument->GetSection("Tubes"))
 	{
 		for (const auto& [key, value] : pSection->GetEntities())
 		{
@@ -1655,9 +1691,9 @@ DEFINE_HOOK(4A7830, CMapData_UpdateFieldOverlayData, 5)
 		{
 			for (v = 0; v < pThis->MapWidthPlusHeight; v++)
 			{
-				pThis->CellDataExts[u + v * pThis->MapWidthPlusHeight].NewOverlay = pThis->NewOverlay[v + u * 512];
-				pThis->CellDatas[u + v * pThis->MapWidthPlusHeight].Overlay = std::min((WORD)0xff, pThis->NewOverlay[v + u * 512]);
-				pThis->CellDatas[u + v * pThis->MapWidthPlusHeight].OverlayData = pThis->OverlayData[v + u * 512];
+				pThis->CellDataExts[u + v * pThis->MapWidthPlusHeight].NewOverlay = pThis->NewOverlay[v + u * CMapDataExt::X_PLUS_Y_LIMIT];
+				pThis->CellDatas[u + v * pThis->MapWidthPlusHeight].Overlay = std::min((WORD)0xff, pThis->NewOverlay[v + u * CMapDataExt::X_PLUS_Y_LIMIT]);
+				pThis->CellDatas[u + v * pThis->MapWidthPlusHeight].OverlayData = pThis->NewOverlayData[v + u * CMapDataExt::X_PLUS_Y_LIMIT];
 
 				pThis->UpdateMapPreviewAt(u, v);
 			}
@@ -1670,9 +1706,8 @@ DEFINE_HOOK(4A7830, CMapData_UpdateFieldOverlayData, 5)
 		{
 			for (v = 0; v < pThis->MapWidthPlusHeight; v++)
 			{
-				pThis->NewOverlay[v + u * 512] = pThis->CellDataExts[u + v * pThis->MapWidthPlusHeight].NewOverlay;
-				pThis->Overlay[v + u * 512] = std::min((WORD)0xff, pThis->CellDataExts[u + v * pThis->MapWidthPlusHeight].NewOverlay);
-				pThis->OverlayData[v + u * 512] = pThis->CellDatas[u + v * pThis->MapWidthPlusHeight].OverlayData;
+				pThis->NewOverlay[v + u * CMapDataExt::X_PLUS_Y_LIMIT] = pThis->CellDataExts[u + v * pThis->MapWidthPlusHeight].NewOverlay;
+				pThis->NewOverlayData[v + u * CMapDataExt::X_PLUS_Y_LIMIT] = pThis->CellDatas[u + v * pThis->MapWidthPlusHeight].OverlayData;
 			}
 		}
 	}
@@ -1681,7 +1716,7 @@ DEFINE_HOOK(4A7830, CMapData_UpdateFieldOverlayData, 5)
 	for (int i = 0; i < pThis->CellDataCount; ++i)
 		pThis->MoneyCount += pThis->GetOreValue(pThis->CellDataExts[i].NewOverlay, pThis->CellDatas[i].OverlayData);
 
-	return 0;
+	return 0x4A7928;
 }
 
 DEFINE_HOOK(4A29E0, CMapData_GetOverlayAt, A)
@@ -1705,11 +1740,19 @@ DEFINE_HOOK(4A16A0, CMapData_ClearOverlay, 8)
 {
 	GET(CMapDataExt*, pThis, ECX);
 
-	std::fill(std::begin(pThis->NewOverlay), std::end(pThis->NewOverlay), 0xFFFF);
-	std::fill(std::begin(pThis->Overlay), std::end(pThis->Overlay), 0xFF);
+	std::fill(pThis->NewOverlay.begin(), pThis->NewOverlay.end(), 0xFFFF);
 	pThis->NewINIFormat = 4;
 
 	return 0x4A16B4;
+}
+
+DEFINE_HOOK(4A1680, CMapData_ClearOverlayData, 8)
+{
+	GET(CMapDataExt*, pThis, ECX);
+
+	std::fill(pThis->NewOverlayData.begin(), pThis->NewOverlayData.end(), 0xFF);
+
+	return 0x4A1693;
 }
 
 

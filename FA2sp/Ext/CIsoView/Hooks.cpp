@@ -1,4 +1,5 @@
 #include "Body.h"
+#include "../../Miscs/Hooks.INI.h"
 #include "../../FA2sp.h"
 
 #include <Drawing.h>
@@ -326,21 +327,25 @@ DEFINE_HOOK(461766, CIsoView_OnLButtonDown_DragObjects, 5)
 	{
 		if (cell->BaseNode.BasenodeID > -1)
 		{
-			auto &cellExt = CMapDataExt::CellDataExts[pos];
-			const auto &node = cellExt.BaseNodes[0];
-			pThis->CurrentCellObjectIndex = cell->BaseNode.BasenodeID;
-			CIsoViewExt::CurrentCellObjectHouse = cell->BaseNode.House;
-			pThis->DragCell.X = node.X;
-			pThis->DragCell.Y = node.Y;
-			pThis->CurrentCellObjectType = 8;
+			auto pCold = CMapDataExt::GetColdOrNull(pos);
+			if (pCold && !pCold->BaseNodes.empty())
+			{
+				const auto &node = pCold->BaseNodes[0];
+				pThis->CurrentCellObjectIndex = cell->BaseNode.BasenodeID;
+				CIsoViewExt::CurrentCellObjectHouse = cell->BaseNode.House;
+				pThis->DragCell.X = node.X;
+				pThis->DragCell.Y = node.Y;
+				pThis->CurrentCellObjectType = 8;
+			}
 		}
 	}
 	if (CIsoViewExt::DrawSmudges && pThis->CurrentCellObjectIndex < 0)
 	{
 		if (pos < CMapData::Instance->CellDataCount)
 		{
-			auto &cellExt = CMapDataExt::CellDataExts[pos];
-			pThis->CurrentCellObjectIndex = cellExt.SmudgeParts.empty() ? cell->Smudge : cellExt.SmudgeParts.back();
+			auto pCold = CMapDataExt::GetColdOrNull(pos);
+			bool hasSmudgeParts = pCold != nullptr && !pCold->SmudgeParts.empty();
+			pThis->CurrentCellObjectIndex = hasSmudgeParts ? pCold->SmudgeParts.back() : cell->Smudge;
 
 			if (pThis->CurrentCellObjectIndex > -1
 				&& static_cast<size_t>(pThis->CurrentCellObjectIndex) < CMapData::Instance->SmudgeDatas.size())
@@ -400,17 +405,17 @@ DEFINE_HOOK(466DDE, CIsoView_OnLButtonUp_DragOthers, 7)
 		int oldY = CMapData::Instance->GetYFromCoordIndex(m_id);
 		ppmfc::CString key;
 		key.Format("%d", oldX * 1000 + oldY);
-		if (CINI::CurrentDocument->KeyExists("Annotations", key))
+		if (CINIExt::CurrentDocument->KeyExists("Annotations", key))
 		{
-			auto value = CINI::CurrentDocument->GetString("Annotations", key);
+			auto value = CINIExt::CurrentDocument->GetString("Annotations", key);
 			if (nLButtonUpFlags != MK_SHIFT)
 			{
 				auto &cellExt = CMapDataExt::CellDataExts[CMapData::Instance->GetCoordIndex(oldX, oldY)];
 				cellExt.HasAnnotation = false;
-				CINI::CurrentDocument->DeleteKey("Annotations", key);
+				CINIExt::CurrentDocument->DeleteKey("Annotations", key);
 			}
 			key.Format("%d", X * 1000 + Y);
-			CINI::CurrentDocument->WriteString("Annotations", key, value);
+			CINIExt::CurrentDocument->WriteString("Annotations", key, value);
 			auto &cellExt = CMapDataExt::CellDataExts[CMapData::Instance->GetCoordIndex(X, Y)];
 			cellExt.HasAnnotation = true;
 		}
@@ -423,30 +428,30 @@ DEFINE_HOOK(466DDE, CIsoView_OnLButtonUp_DragOthers, 7)
 		CMapDataExt::MakeObjectRecord(ObjectRecord::RecordType::Basenode);
 		char key[10];
 		sprintf(key, "%03d", m_id);
-		if (CINI::CurrentDocument->KeyExists(CIsoViewExt::CurrentCellObjectHouse, key))
+		if (CINIExt::CurrentDocument->KeyExists(CIsoViewExt::CurrentCellObjectHouse, key))
 		{
-			auto atoms = STDHelpers::SplitString(CINI::CurrentDocument->GetString(CIsoViewExt::CurrentCellObjectHouse, key), 2);
+			auto atoms = STDHelpers::SplitString(CINIExt::CurrentDocument->GetString(CIsoViewExt::CurrentCellObjectHouse, key), 2);
 			ppmfc::CString value;
 			value.Format("%s,%d,%d", atoms[0], Y, X);
 			if (nLButtonUpFlags == MK_SHIFT)
 			{
-				int nodeCount = CINI::CurrentDocument->GetInteger(CIsoViewExt::CurrentCellObjectHouse, "NodeCount");
+				int nodeCount = CINIExt::CurrentDocument->GetInteger(CIsoViewExt::CurrentCellObjectHouse, "NodeCount");
 				if (nodeCount < 1000)
 				{
 					for (int i = 0; i < 1000; ++i)
 					{
 						sprintf(key, "%03d", i);
-						if (!CINI::CurrentDocument->KeyExists(CIsoViewExt::CurrentCellObjectHouse, key))
+						if (!CINIExt::CurrentDocument->KeyExists(CIsoViewExt::CurrentCellObjectHouse, key))
 						{
 							break;
 						}
 					}
 					char count[10];
 					sprintf(count, "%d", nodeCount + 1);
-					CINI::CurrentDocument->WriteString(CIsoViewExt::CurrentCellObjectHouse, "NodeCount", count);
+					CINIExt::CurrentDocument->WriteString(CIsoViewExt::CurrentCellObjectHouse, "NodeCount", count);
 				}
 			}
-			CINI::CurrentDocument->WriteString(CIsoViewExt::CurrentCellObjectHouse, key, value);
+			CINIExt::CurrentDocument->WriteString(CIsoViewExt::CurrentCellObjectHouse, key, value);
 			CMapData::Instance->UpdateFieldBasenodeData(false);
 		}
 		m_id = -1;
@@ -505,7 +510,7 @@ DEFINE_HOOK(466DDE, CIsoView_OnLButtonUp_DragOthers, 7)
 			{
 				FString size;
 				size.Format("%d,%d,%d,%d", mpL, mpT, mpW, mpH);
-				CINI::CurrentDocument->WriteString("Map", "LocalSize", size);
+				CINIExt::CurrentDocument->WriteString("Map", "LocalSize", size);
 				if (IsWindowVisible(CFinalSunDlg::Instance->MapD))
 				{
 					auto dlg = GetDlgItem(CFinalSunDlg::Instance->MapD, 1045);
@@ -719,57 +724,64 @@ DEFINE_HOOK(45C850, CIsoView_OnMouseMove_Delete, 5)
 
 			if (CellData.Structure != -1)
 			{
-				makeOrAppendRecord(ObjectRecord::RecordType::Building);
-				CMapData::Instance->DeleteBuildingData(CellData.Structure);
+				const bool validStructure =
+					CellData.Structure < CMapDataExt::StructureIndexMap.size()
+					&& CMapDataExt::StructureIndexMap[CellData.Structure] != -1;
+
+				if (CIsoViewExt::DrawStructures
+					&& (!validStructure || Renderer::Buildings[CellData.Structure].IsVisible()))
+				{
+					makeOrAppendRecord(ObjectRecord::RecordType::Building);
+					CMapData::Instance->DeleteBuildingData(CellData.Structure);
+				}
 			}
 
-			if (ExtConfigs::InfantrySubCell_Edit &&
-				pIsoView->BrushSizeX == 1 && pIsoView->BrushSizeY == 1)
+			if (CIsoViewExt::DrawInfantries)
 			{
-				int idx = CIsoViewExt::GetSelectedSubcellInfantryIdx(point.X, point.Y);
-				if (idx != -1)
+				if (ExtConfigs::InfantrySubCell_Edit &&
+					pIsoView->BrushSizeX == 1 && pIsoView->BrushSizeY == 1)
 				{
-					makeOrAppendRecord(ObjectRecord::RecordType::Infantry);
-					CMapData::Instance->DeleteInfantryData(idx);
+					int idx = CIsoViewExt::GetSelectedSubcellInfantryIdx(point.X, point.Y);
+					if (idx != -1 && Renderer::Infantries[idx].IsVisible())
+					{
+						makeOrAppendRecord(ObjectRecord::RecordType::Infantry);
+						CMapData::Instance->DeleteInfantryData(idx);
+					}
+				}
+				else
+				{
+					for (int i = 0; i < 3; ++i)
+					{
+						const int idx = CellData.Infantry[i];
+						if (idx != -1 && Renderer::Infantries[idx].IsVisible())
+						{
+							makeOrAppendRecord(ObjectRecord::RecordType::Infantry);
+							CMapData::Instance->DeleteInfantryData(idx);
+						}
+					}
 				}
 			}
-			else
-			{
-				if (CellData.Infantry[0] != -1)
-				{
-					makeOrAppendRecord(ObjectRecord::RecordType::Infantry);
-					CMapData::Instance->DeleteInfantryData(CellData.Infantry[0]);
-				}
-				if (CellData.Infantry[1] != -1)
-				{
-					makeOrAppendRecord(ObjectRecord::RecordType::Infantry);
-					CMapData::Instance->DeleteInfantryData(CellData.Infantry[1]);
-				}
-				if (CellData.Infantry[2] != -1)
-				{
-					makeOrAppendRecord(ObjectRecord::RecordType::Infantry);
-					CMapData::Instance->DeleteInfantryData(CellData.Infantry[2]);
-				}
-			}
-			if (CellData.Unit != -1)
+			if (CIsoViewExt::DrawUnits && CellData.Unit != -1
+				&& Renderer::Vehicles[CellData.Unit].IsVisible())
 			{
 				makeOrAppendRecord(ObjectRecord::RecordType::Unit);
 				CMapData::Instance->DeleteUnitData(CellData.Unit);
 			}
 
-			if (CellData.Aircraft != -1)
+			if (CIsoViewExt::DrawAircrafts && CellData.Aircraft != -1
+				&& Renderer::Aircrafts[CellData.Aircraft].IsVisible())
 			{
 				makeOrAppendRecord(ObjectRecord::RecordType::Aircraft);
 				CMapData::Instance->DeleteAircraftData(CellData.Aircraft);
 			}
 
-			if (CellData.Terrain != -1)
+			if (CIsoViewExt::DrawTerrains && CellData.Terrain != -1)
 			{
 				makeOrAppendRecord(ObjectRecord::RecordType::Terrain);
 				CMapData::Instance->DeleteTerrainData(CellData.Terrain);
 			}
 
-			if (CellData.Smudge != -1)
+			if (CIsoViewExt::DrawSmudges && CellData.Smudge != -1)
 			{
 				makeOrAppendRecord(ObjectRecord::RecordType::Smudge);
 				CMapData::Instance->DeleteSmudgeData(CellData.Smudge);
@@ -792,7 +804,6 @@ DEFINE_HOOK(45EC1A, CIsoView_OnCommand_HandleProperty, A)
 	int type = -1;
 	if (CIsoViewExt::DrawInfantries)
 	{
-		const auto &filter = CIsoViewExt::VisibleInfantries;
 		if (!ExtConfigs::InfantrySubCell_Edit)
 		{
 			index = CMapDataExt::GetInfantryAt(pos);
@@ -801,44 +812,36 @@ DEFINE_HOOK(45EC1A, CIsoView_OnCommand_HandleProperty, A)
 		{
 			index = CIsoViewExt::GetSelectedSubcellInfantryIdx(pIsoView->StartCell.X, pIsoView->StartCell.Y);
 		}
-		if (CIsoViewExt::DrawInfantriesFilter && filter.find(index) == filter.end())
+		if (index != -1 && !Renderer::Infantries[index].IsVisible())
 			index = -1;
 		type = 0;
 	}
-	if (CIsoViewExt::DrawAircrafts && index < 0)
+	if (CIsoViewExt::DrawAircrafts && index < 0 && cell->Aircraft > -1)
 	{
 		index = cell->Aircraft;
-		const auto &filter = CIsoViewExt::VisibleAircrafts;
-		if (CIsoViewExt::DrawAircraftsFilter && filter.find(index) == filter.end())
+		if (!Renderer::Aircrafts[cell->Aircraft].IsVisible())
 			index = -1;
 		type = 2;
 	}
-	if (CIsoViewExt::DrawUnits && index < 0)
+	if (CIsoViewExt::DrawUnits && index < 0 && cell->Unit > -1)
 	{
 		index = cell->Unit;
-		const auto &filter = CIsoViewExt::VisibleUnits;
-		if (CIsoViewExt::DrawUnitsFilter && filter.find(index) == filter.end())
+		if (!Renderer::Vehicles[cell->Unit].IsVisible())
 			index = -1;
 		type = 3;
 	}
-	if (CIsoViewExt::DrawStructures && index < 0)
+	if (CIsoViewExt::DrawStructures && index < 0 && cell->Structure > -1)
 	{
 		index = cell->Structure;
 		type = 1;
 		if (cell->Structure < CMapDataExt::StructureIndexMap.size())
 		{
 			auto StrINIIndex = CMapDataExt::StructureIndexMap[cell->Structure];
-			if (StrINIIndex != -1)
+			if (StrINIIndex != -1 && Renderer::Buildings[cell->Structure].IsVisible())
 			{
-				const auto &filter = CIsoViewExt::VisibleStructures;
-				if (CIsoViewExt::DrawStructuresFilter && filter.find(StrINIIndex) == filter.end())
-					index = -1;
-				else
-				{
-					const auto &objRender = CMapDataExt::BuildingRenderDatasFix[StrINIIndex];
-					pIsoView->StartCell.X = objRender.X;
-					pIsoView->StartCell.Y = objRender.Y;
-				}
+				const auto &objRender = CMapDataExt::BuildingRenderDatasFix[StrINIIndex];
+				pIsoView->StartCell.X = objRender.X;
+				pIsoView->StartCell.Y = objRender.Y;
 			}
 			else
 			{
@@ -868,11 +871,11 @@ DEFINE_HOOK(45EC1A, CIsoView_OnCommand_HandleProperty, A)
 	{
 		ppmfc::CString key;
 		key.Format("%d", coord.X * 1000 + coord.Y);
-		if (CINI::CurrentDocument->KeyExists("Annotations", key))
+		if (CINIExt::CurrentDocument->KeyExists("Annotations", key))
 		{
 			if ((GetKeyState(VK_CONTROL) & 0x8000))
 			{
-				auto atoms = STDHelpers::SplitString(CINI::CurrentDocument->GetString("Annotations", key), 6);
+				auto atoms = STDHelpers::SplitString(CINIExt::CurrentDocument->GetString("Annotations", key), 6);
 				ppmfc::CString value;
 				bool folded = STDHelpers::IsTrue(atoms[2]);
 				for (int i = 0; i < atoms.size(); ++i)
@@ -889,7 +892,7 @@ DEFINE_HOOK(45EC1A, CIsoView_OnCommand_HandleProperty, A)
 							value += "yes";
 					}
 				}
-				CINI::CurrentDocument->WriteString("Annotations", key, value);
+				CINIExt::CurrentDocument->WriteString("Annotations", key, value);
 				::RedrawWindow(CFinalSunDlg::Instance->MyViewFrame.pIsoView->m_hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
 			}
 			else
@@ -1378,7 +1381,7 @@ DEFINE_HOOK(4C4480, CIsoView_SmoothTiberium, 5)
 	if (count > 0)
 	{
 		Map->CellDatas[dwPos].OverlayData = _adj[count - 1];
-		Map->OverlayData[y + x * 512] = _adj[count - 1];
+		Map->NewOverlayData[y + x * CMapDataExt::X_PLUS_Y_LIMIT] = _adj[count - 1];
 
 		Map->AddTiberium(std::min(ovrl, (word)0xFF), _adj[count - 1]);
 	}
@@ -1791,7 +1794,7 @@ DEFINE_HOOK(45BFE1, CIsoView_OnMouseMove_Waypoint_Add, 8)
 	{
 		int i = 8;
 		ppmfc::CString key = "8";
-		while (CINI::CurrentDocument->KeyExists("Waypoints", key))
+		while (CINIExt::CurrentDocument->KeyExists("Waypoints", key))
 		{
 			i++;
 			key.Format("%d", i);
@@ -1819,14 +1822,14 @@ DEFINE_HOOK(45C0CF, CIsoView_OnMouseMove_Waypoint_AddPlayerLocation, 6)
 	CMapDataExt::MakeObjectRecord(ObjectRecord::RecordType::Waypoint, true);
 	auto deleteWaypoint = [](ppmfc::CString key)
 	{
-		if (auto pSection = CINI::CurrentDocument->GetSection("Waypoints"))
+		if (auto pSection = CINIExt::CurrentDocument->GetSection("Waypoints"))
 		{
-			if (CINI::CurrentDocument->KeyExists("Waypoints", key))
+			if (CINIExt::CurrentDocument->KeyExists("Waypoints", key))
 			{
 				auto &&value = pSection->GetString(key);
 				int x = atoi(value) / 1000;
 				int y = atoi(value) % 1000;
-				CINI::CurrentDocument->DeleteKey(pSection, key);
+				CINIExt::CurrentDocument->DeleteKey(pSection, key);
 				CMapData::Instance->UpdateFieldWaypointData(false);
 
 				if (CMapData::Instance->IsMultiOnly())
@@ -2182,16 +2185,16 @@ DEFINE_HOOK(469E70, CIsoView_UpdateStatusBar, 7)
 	if (cell->CellTag > -1)
 	{
 		FString id = "";
-		if (CINI::CurrentDocument->SectionExists("CellTags"))
+		if (CINIExt::CurrentDocument->SectionExists("CellTags"))
 		{
 			char tmp[10];
 			_itoa((X * 1000 + Y), tmp, 10);
-			id = CINI::CurrentDocument->GetString("CellTags", tmp);
+			id = CINIExt::CurrentDocument->GetString("CellTags", tmp);
 		}
 		if (id != "")
 		{
 			FString name = "MISSING";
-			auto tag = CINI::CurrentDocument->GetString("Tags", id);
+			auto tag = CINIExt::CurrentDocument->GetString("Tags", id);
 			auto atoms = FString::SplitString(tag);
 			if (atoms.size() > 1)
 			{

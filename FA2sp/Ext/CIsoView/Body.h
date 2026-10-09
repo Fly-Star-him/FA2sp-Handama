@@ -11,6 +11,8 @@
 #include <set>
 #include <ddraw.h>
 #include <gdiplus.h>
+#include <d3d11.h>
+#include <wrl/client.h>
 
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ddraw.lib")
@@ -400,6 +402,8 @@ public:
 
     static bool SkipMapScreenConvert;
     static Bitmap* pFullBitmap;
+    inline static int RenderBitmapOffsetY = 0;
+    inline static Microsoft::WRL::ComPtr<ID3D11Texture2D> RenderStagingTexture;
     static bool DrawStructures;
     static bool DrawInfantries;
     static bool DrawUnits;
@@ -461,11 +465,6 @@ public:
     static int drawOffsetX;
     static int drawOffsetY;
     static Cell3DLocation CurrentDrawCellLocation;
-
-    static std::unordered_set<short> VisibleStructures;
-    static std::unordered_set<short> VisibleInfantries;
-    static std::unordered_set<short> VisibleUnits;
-    static std::unordered_set<short> VisibleAircrafts;
 
     static FHashSet MapRendererIgnoreObjects;
     static std::vector<EditedMarks> DrawEditedMarks;

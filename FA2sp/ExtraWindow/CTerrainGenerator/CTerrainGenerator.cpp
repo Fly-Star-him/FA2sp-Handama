@@ -15,7 +15,7 @@
 
 HWND CTerrainGenerator::m_hwnd;
 CFinalSunDlg* CTerrainGenerator::m_parent;
-CINI& CTerrainGenerator::map = CINI::CurrentDocument;
+CINIExt& CTerrainGenerator::map = CINIExt::CurrentDocument;
 std::unique_ptr<CINI, GameUniqueDeleter<CINI>> CTerrainGenerator::ini = nullptr;
 MultimapHelper& CTerrainGenerator::rules = Variables::RulesMap;
 HWND CTerrainGenerator::hTab;
@@ -375,7 +375,8 @@ void CTerrainGenerator::Update(HWND& hWnd)
     }
     for (int i = 0; i < TERRAIN_GENERATOR_DISPLAY; ++i)
     {
-        vcbTileSet[i].AddStrings(tilesets);
+		vcbTileSet[i].Clear();
+		vcbTileSet[i].AddStrings(tilesets);
         vcbTileSet[i].AddString("<none>");
     }
 

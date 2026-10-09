@@ -11,6 +11,7 @@
 #include "../../Helpers/FString.h"
 
 #define CUSTOM_TILE_START 100000
+
 struct TwoPointStruct;
 struct TextureResource;
 namespace Renderer {
@@ -355,44 +356,8 @@ struct TechnoAttachment
     bool IsOnTurret;
 };
 
-struct CellDataExt
+struct CellDataExtColdData
 {
-    WORD X;
-    WORD Y;
-
-    WORD NewOverlay = 0xFFFF;
-
-    // for preview
-    bool AroundPlayerLocation = false;
-    bool AroundHighBridge = false;
-
-    // for locate cell
-    bool drawCell = false;
-
-    // for smooth water
-    bool IsWater = false;
-    bool Processed = false;
-
-    // for raise ground
-    bool Adjusted = false;
-    bool CreateSlope = false;
-
-    // for create shore
-    bool ShoreProcessed = false;
-    bool ShoreLATNeeded = false;
-
-    // for terrain generation
-    bool AddRandomTile = false;
-
-    // for line tool
-    bool LineToolProcessed = false;
-
-    // for paste
-	bool IsPasteCell = false;
-
-	// for lighting preview
-    LightingSourceTint Lighting = { 0.0f , 0.0f , 0.0f , 0.0f };
-
     std::vector<BaseNodeDataExt> BaseNodes;
     // first = index of StructureIndexMap, second = index in GetBuildingTypeID 
     std::vector<std::pair<short, short>> Structures;
@@ -402,12 +367,6 @@ struct CellDataExt
     std::vector<std::pair<short, short>> Smudges;
     // stores smudge index for dragging
     std::vector<short> SmudgeParts;
-
-    bool HasAnim = false;
-    bool HasAnnotation = false;
-
-    int RecordMinimapUpdateIndex[3] = { -1 } ;
-    char DamagedFires[8] = { -1 };
 
     struct BuildingRenderPart
     {
@@ -436,19 +395,27 @@ struct CellDataExt
     std::vector<BuildingRenderPart> BuildingRenderParts;
     std::vector<BaseNodeRenderPart> BaseNodeRenderParts;
 
-    // remapable overlay
-    COLORREF RemapableColor = 0x000000ff;
-    int CenterBuildingIndex = -1; 
-    int NearestCenterCellIndex = -1;
+    // paste preview, only valid while a paste operation is previewed
+    const char* PasteInfantry[3] = { nullptr, nullptr, nullptr };
+    const char* PasteBuilding = nullptr;
+    const char* PasteUnit = nullptr;
+    const char* PasteAircraft = nullptr;
+    const char* PasteSmudge = nullptr;
+    const char* PasteTerrain = nullptr;
 
-	const char* PasteInfantry[3];
-    const char* PasteBuilding;
-    const char* PasteUnit;
-    const char* PasteAircraft;
-    const char* PasteSmudge;
-    const char* PasteTerrain;
+    // true when nothing is stored, so the entry can be dropped from the cold table
+    bool IsEmpty() const
+    {
+        return BaseNodes.empty() && Structures.empty() && Terrains.empty()
+            && Smudges.empty() && SmudgeParts.empty()
+            && BuildingRenderParts.empty() && BaseNodeRenderParts.empty()
+            && PasteInfantry[0] == nullptr && PasteInfantry[1] == nullptr
+            && PasteInfantry[2] == nullptr && PasteBuilding == nullptr
+            && PasteUnit == nullptr && PasteAircraft == nullptr
+            && PasteSmudge == nullptr && PasteTerrain == nullptr;
+    }
 
-	void Structures_insert(short key, short value)
+    void Structures_insert(short key, short value)
     {
         for (auto& p : Structures) {
             if (p.first == key) {
@@ -566,6 +533,56 @@ struct CellDataExt
             }
         }
     }
+};
+
+struct CellDataExt
+{
+    WORD X;
+    WORD Y;
+
+    WORD NewOverlay = 0xFFFF;
+
+    bool AroundPlayerLocation : 1 = false;
+    bool AroundHighBridge : 1 = false;
+
+    // for locate cell
+    bool drawCell : 1 = false;
+
+    // for smooth water
+    bool IsWater : 1 = false;
+    bool Processed : 1 = false;
+
+    // for raise ground
+    bool Adjusted : 1 = false;
+    bool CreateSlope : 1 = false;
+
+    // for create shore
+    bool ShoreProcessed : 1 = false;
+    bool ShoreLATNeeded : 1 = false;
+
+    // for terrain generation
+    bool AddRandomTile : 1 = false;
+
+    // for line tool
+    bool LineToolProcessed : 1 = false;
+
+    // for paste
+    bool IsPasteCell : 1 = false;
+
+	// for lighting preview
+    LightingSourceTint Lighting = { 0.0f , 0.0f , 0.0f , 0.0f };
+
+    bool HasAnim : 1 = false;
+    bool HasAnnotation : 1 = false;
+
+    // short is enough: every value written here comes from a CellData short field
+    short RecordMinimapUpdateIndex[3] = { -1 } ;
+    char DamagedFires[8] = { -1 };
+
+    // remapable overlay
+    COLORREF RemapableColor = 0x000000ff;
+    int CenterBuildingIndex = -1; 
+    int NearestCenterCellIndex = -1;
 
     CellDataExt();
 };
@@ -587,20 +604,14 @@ public:
 
 class TerrainRecord : public HistoryRecord {
 public:
-    int left;
-    int top;
-    int bottom;
-    int right;
+    int left = 0;
+    int top = 0;
+    int bottom = 0;
+    int right = 0;
 
-    std::unique_ptr<BOOL[]> bRedrawTerrain;
-    std::unique_ptr<WORD[]> overlay;
-    std::unique_ptr<BYTE[]> overlaydata;
-    std::unique_ptr<WORD[]> wGround;
-    std::unique_ptr<WORD[]> bMapData;
-    std::unique_ptr<BYTE[]> bSubTile;
-    std::unique_ptr<BYTE[]> bHeight;
-    std::unique_ptr<BYTE[]> bMapData2;
-    std::unique_ptr<BYTE[]> bRNDData;
+
+    std::vector<BYTE> data;
+    bool compressed = false;
 
     void record(int left, int top, int right, int bottom);
     void recover();
@@ -1010,6 +1021,13 @@ public:
 
     static CellDataExt CellDataExt_FindCell;
     static std::vector<CellDataExt> CellDataExts;
+
+    static std::unordered_map<int, CellDataExtColdData> CellDataExtColds;
+    static CellDataExtColdData& GetCold(int index);
+    static CellDataExtColdData* GetColdOrNull(int index);
+    static void PruneColdIfEmpty(int index);
+    static void ClearColds();
+    static CellDataExtColdData EmptyCold;
     //static MapCoord CurrentMapCoord;
     static MapCoord CurrentMapCoordPaste;
     static std::unordered_map<CTileBlockClass*, TileBlockExt> TileBlockDataExt;
@@ -1054,6 +1072,8 @@ public:
     static std::unordered_set<int> ShoreTileSets;
     static std::unordered_map<int, bool> SoftTileSets; // soft = affected by shore logic
     static FString BitmapImporterTheater;
+    static int BitmapImporterWidth;
+    static int BitmapImporterHeight;
     static float ConditionYellow;
     static float ConditionRed;
     static bool DeleteBuildingByIniID;
@@ -1071,7 +1091,16 @@ public:
     static std::unordered_set<int> NoHeightRedrawTileSets;
     static std::unordered_map<int, Palette*> TileSetPalettes;
     static int NewINIFormat;
-    static WORD NewOverlay[0x40000];
+    static int X_PLUS_Y_LIMIT;
+
+    // NewOverlay / NewOverlayData are indexed as [x * X_PLUS_Y_LIMIT + y] with
+    // x, y < MapWidthPlusHeight, so X_PLUS_Y_LIMIT must never be smaller than
+    // MapWidthPlusHeight. Maps bigger than MAX_MAP_WIDTH_PLUS_HEIGHT are not supported.
+    static constexpr int MAX_MAP_WIDTH_PLUS_HEIGHT = 2048;
+    static int GetXPlusYLimit(int mapWidthPlusHeight);
+
+    static std::vector<WORD> NewOverlay;
+    static std::vector<BYTE> NewOverlayData;
     static HistoryList UndoRedoDatas;
     static HistoryList PreviewHistoryData;
     static bool RecordingPreviewHistory;
@@ -1080,7 +1109,6 @@ public:
     static bool IsMMXFile;
     static bool IsUTF8File;
     static bool SkipBuildingOverlappingCheck;
-    static std::vector<FString> MapIniSectionSorting;
     static FMap<FSet> PowersUpBuildings;
     static FSet PowersUpBuildingSet;
     static bool PlaceStructure_Preview;

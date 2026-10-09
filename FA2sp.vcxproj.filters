@@ -45,6 +45,12 @@
     <ClInclude Include="FA2sp\Helpers\Translations.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="FA2sp\Helpers\CINIOrderTracker.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FA2sp\Helpers\SequencedKeyList.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
     <ClInclude Include="FA2sp\Helpers\STDHelpers.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -64,6 +70,15 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="FA2sp\Ext\CIsoView\Body.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FA2sp\Ext\CIsoView\MapExport.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FA2sp\Ext\CIsoView\MapPngEncoder.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FA2sp\Ext\CLoading\Body.Cipher.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="FA2sp\Ext\CLoading\Body.h">
@@ -238,6 +253,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="FA2sp\Miscs\Hooks.INI.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="FA2sp\Miscs\Hooks.PreviewFix.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="FA2sp\ExtraWindow\CLuaConsole\CLuaConsole.h">
@@ -614,6 +632,9 @@
     <ClCompile Include="FA2sp\Helpers\InstructionSet.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="FA2sp\Helpers\CINIOrderTracker.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
     <ClCompile Include="FA2sp\Helpers\STDHelpers.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
@@ -841,6 +862,24 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="glad\src\glad.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="FA2sp\Ext\CIsoView\MapPngEncoder.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="zlib\adler32.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="zlib\crc32.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="zlib\deflate.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="zlib\trees.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="zlib\zutil.c">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="FA2sp\ExtraWindow\CMiscSettings\CMiscSettings.cpp">
