@@ -101,6 +101,7 @@
       <Optimization>MaxSpeed</Optimization>
       <BuildStlModules>false</BuildStlModules>
       <ScanSourceForModuleDependencies>false</ScanSourceForModuleDependencies>
+      <ForcedIncludeFiles>intrin.h</ForcedIncludeFiles>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -249,8 +250,8 @@
     <ClCompile Include="FA2sp\ExtraWindow\CNewPropertyBuilding\CNewPropertyBuilding.cpp" />
     <ClCompile Include="FA2sp\ExtraWindow\CNewPropertyInfantry\CNewPropertyInfantry.cpp" />
     <ClCompile Include="FA2sp\ExtraWindow\CNewPropertyUnit\CNewPropertyUnit.cpp" />
+    <ClCompile Include="FA2sp\Extra\Body.Encryption.cpp" />
     <ClCompile Include="FA2sp\Ext\CAITriggerTypesEnable\Body.cpp" />
-    <ClCompile Include="FA2sp\Extra\Encryption.cpp" />
     <ClCompile Include="FA2sp\Extra\GeneralLoad.cpp" />
     <ClCompile Include="FA2sp\Ext\CBasic\Hooks.cpp" />
     <ClCompile Include="FA2sp\Ext\CChangeMapSize\Hooks.cpp" />
@@ -429,6 +430,7 @@
     <ClInclude Include="FA2sp\ExtraWindow\CNewPropertyBuilding\CNewPropertyBuilding.h" />
     <ClInclude Include="FA2sp\ExtraWindow\CNewPropertyInfantry\CNewPropertyInfantry.h" />
     <ClInclude Include="FA2sp\ExtraWindow\CNewPropertyUnit\CNewPropertyUnit.h" />
+    <ClInclude Include="FA2sp\Extra\Body.Cipher.h" />
     <ClInclude Include="FA2sp\Ext\CAITriggerTypesEnable\Body.h" />
     <ClInclude Include="FA2sp\Extra\GeneralLoad.h" />
     <ClInclude Include="FA2sp\Ext\CCreateMap3B\Body.h" />
@@ -446,7 +448,6 @@
     <ClInclude Include="glad\include\glad\glad.h" />
     <ClInclude Include="FA2sp\Ext\CIsoView\RendererTypes.h" />
     <ClInclude Include="FA2sp\Ext\CLighting\Body.h" />
-    <ClInclude Include="FA2sp\Ext\CLoading\Body.Cipher.h" />
     <ClInclude Include="FA2sp\Ext\CLoading\Body.h" />
     <ClInclude Include="FA2sp\Ext\CMapData\Body.h" />
     <ClInclude Include="FA2sp\Ext\CMapValidator\Body.h" />

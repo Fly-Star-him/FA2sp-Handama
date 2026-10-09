@@ -1,0 +1,2 @@
+key_gen
+pause
